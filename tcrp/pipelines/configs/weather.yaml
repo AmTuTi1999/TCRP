@@ -1,0 +1,37 @@
+# Weather — Max-Planck meteorological station, 10-min granularity, 21 features
+# 52 696 rows  |  train 60% / val 20% / test 20%
+# Note: DATASET_META lists 'WetBulbCelsius' as target, but the CSV uses 'OT' for
+# the last column. Setting target_col to null falls back to the last column (OT).
+
+dataset: Weather
+data_root: tcrp/data/raw
+univariate: true
+target_col: null
+
+# Model
+T: 336           # 56-hour look-back (336 × 10 min)
+H: 96            # 16-hour forecast horizon (96 × 10 min)
+L: 20
+stride: 5
+d: 64
+periods: [144, 1008]   # daily (144 × 10min) and weekly (1008 × 10min)
+alpha: 5.0
+beta: 5.0
+lambda1: 0.1
+lambda2: 1.0e-4
+probabilistic: false
+
+# Training
+lr: 1.0e-3
+batch_size: 32
+max_epochs: 100
+early_stopping_patience: 10
+lr_patience: 5
+lr_factor: 0.5
+grad_clip: 1.0
+num_workers: 0
+seed: 42
+
+# I/O
+checkpoint_dir: checkpoints
+run_name: ""

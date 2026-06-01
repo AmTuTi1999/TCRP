@@ -1,0 +1,35 @@
+# ETTh1 — Electricity Transformer Temperature, 1-hour granularity
+# 17 420 rows  |  train 60% / val 20% / test 20%
+
+dataset: ETTh1
+data_root: tcrp/data/raw
+univariate: true
+target_col: OT
+
+# Model
+T: 336           # 14-day look-back
+H: 96            # 4-day forecast horizon
+L: 30
+stride: 5
+d: 64
+periods: [24, 168]   # daily (24h) and weekly (168h)
+alpha: 5.0
+beta: 5.0
+lambda1: 0.1
+lambda2: 1.0e-4
+probabilistic: false
+include_gbm: True
+# Training
+lr: 1.0e-3
+batch_size: 32
+max_epochs: 100
+early_stopping_patience: 10
+lr_patience: 5
+lr_factor: 0.5
+grad_clip: 1.0
+num_workers: 0
+seed: 42
+
+# I/O
+checkpoint_dir: checkpoints
+run_name: ""
