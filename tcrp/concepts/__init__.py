@@ -9,6 +9,8 @@ Exports:
   - ConceptScorer: Full concept vector computation (T-04)
   - gbm_scores: GBM drift and volatility estimation (stochastic)
   - GBMScores: NamedTuple for GBM parameter estimates
+  - autocorrelation_scores: Lag-k ACF, mean-reversion speed, z-score (T-03d)
+  - AutocorrelationScores: TypedDict for autocorrelation outputs
 """
 
 from .monotonicity import soft_monotonicity, MonotonicityScores
@@ -16,6 +18,10 @@ from .curvature import soft_curvature, CurvatureScores
 from .periodicity import periodicity_score
 from .concept_vector import ConceptScorer
 from .stochastic import gbm_scores, GBMScores
+from .autocorrelation import autocorrelation_scores, AutocorrelationScores
+from .volatility import volatility_scores, VolatilityScores
+from .distribution_shape import shape_scores, ShapeScores
+from .structural_breaks import break_scores, BreakScores
 
 __all__ = [
     "soft_monotonicity",
@@ -26,4 +32,12 @@ __all__ = [
     "ConceptScorer",
     "gbm_scores",
     "GBMScores",
+    "autocorrelation_scores",
+    "AutocorrelationScores",
+    "volatility_scores",
+    "VolatilityScores",
+    "shape_scores",
+    "ShapeScores",
+    "break_scores",
+    "BreakScores",
 ]

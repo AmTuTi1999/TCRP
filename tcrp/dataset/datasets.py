@@ -151,6 +151,10 @@ class TimeSeriesDataset(Dataset):
             else:
                 col_idx = V - 1  # last column by convention
             split_data = split_data[:, col_idx : col_idx + 1]
+            # Narrow statistics to match the single output channel so that
+            # inverse_transform(y_hat, mean, std) broadcasts correctly against (B, H).
+            self.mean = self.mean[col_idx : col_idx + 1]
+            self.std  = self.std[col_idx : col_idx + 1]
 
         self.data = split_data  # (M, 1) univariate | (M, V) multivariate
 

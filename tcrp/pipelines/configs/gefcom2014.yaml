@@ -1,0 +1,37 @@
+# GEFCOM2014 — Global Energy Forecasting Competition 2014, hourly zonal load (MW)
+# ~8 760 rows (1 year)  |  train 60% / val 20% / test 20%
+# Target column: LOAD (total system load in MW)
+
+dataset: GEFCOM2014
+data_root: tcrp/data/raw
+univariate: true
+target_col: LOAD
+
+# Model
+T: 336           # 14-day look-back (336 × 1 h)
+H: 96            # 4-day forecast horizon (96 × 1 h)
+L: 30            # segment length (≥ 24 to capture full daily cycle)
+stride: 1
+d: 64
+periods: [24, 168]   # daily (24 h) and weekly (168 h)
+k_max: 2
+alpha: 5.0
+beta: 5.0
+lambda1: 0.1         # alignment weight: strong daily/weekly periodicity makes alignment informative
+lambda2: 1.0e-4
+probabilistic: false
+
+# Training
+lr: 1.0e-3
+batch_size: 32
+max_epochs: 100
+early_stopping_patience: 10
+lr_patience: 5
+lr_factor: 0.5
+grad_clip: 1.0
+num_workers: 0
+seed: 42
+
+# I/O
+checkpoint_dir: checkpoints
+run_name: ""

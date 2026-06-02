@@ -41,37 +41,23 @@ def soft_curvature(
         - mu_signed < 0, kappa_signed < 0: accelerating fall (tau > 0)
         - mu_signed < 0, kappa_signed > 0: decelerating fall (tau < 0)
     """
-    # Handle both single sequence (L,) and batched (B, L)
     if s.dim() == 1:
         s = s.unsqueeze(0)
         squeeze_output = True
     else:
         squeeze_output = False
-    
-    # Compute first differences: delta[l] = s[l] - s[l-1]
     delta = s[:, 1:] - s[:, :-1]  # shape (B, L-1)
-    
-    # Compute second differences: delta2[l] = delta[l+1] - delta[l]
     delta2 = delta[:, 1:] - delta[:, :-1]  # shape (B, L-2)
-    
-    # Apply sigmoid to beta-scaled second differences and compute mean
-    # Range of sigmoid(beta * delta2) is (0, 1)
     kappa = torch.sigmoid(beta * delta2).mean(dim=1)  # shape (B,)
-    
-    # Transform to range (-1, 1)
     kappa_signed = 2 * kappa - 1  # shape (B,)
-    
-    # Ensure mu_signed has correct shape
     if mu_signed.dim() == 0:
         mu_signed = mu_signed.unsqueeze(0)
         squeeze_mu = True
     else:
         squeeze_mu = False
     
-    # Observed tendency: interaction of monotonicity and curvature
     tau = mu_signed * kappa_signed  # shape (B,)
     
-    # Squeeze batch dimension if input was 1D
     if squeeze_output:
         kappa_signed = kappa_signed.squeeze(0)
         tau = tau.squeeze(0)

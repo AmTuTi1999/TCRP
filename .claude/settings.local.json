@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl *)",
+      "Bash(ls *)",
+      "Bash(cd \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\TCRP\")",
+      "Bash(find \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\TCRP\\\\tcrp\" -type f -name \"*.py\")",
+      "Bash(python -c ' *)",
+      "Bash(python *)",
+      "Bash(python3 *)"
+    ]
+  }
+}

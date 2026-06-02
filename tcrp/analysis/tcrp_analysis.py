@@ -11,7 +11,7 @@ from torch import Tensor
 from tcrp.analysis.lrp import lrp_gamma_conv, lrp_linear_eps, lrp_mean_pool, lrp_relu
 from tcrp.model.bottleneck import ConceptProjection
 from tcrp.model.decoder import HorizonDecoder, GaussianDecoder
-from tcrp.model.encoder import TCNEncoder, CausalDilatedBlock
+from tcrp.model.encoder import TCNEncoder, LSTMEncoder, CausalDilatedBlock
 from tcrp.model.forecaster import TCRPForecaster
 
 
@@ -72,6 +72,11 @@ class TCRPAnalyser:
         )
 
     def _encode_with_cache(self, segments: Tensor) -> Tuple[Tensor, list, Tensor]:
+        if not isinstance(self.model.encoder, TCNEncoder):
+            raise NotImplementedError(
+                "TCRPAnalyser currently supports TCNEncoder only; "
+                f"got {type(self.model.encoder).__name__}"
+            )
         B, N, L = segments.shape
         x = segments.reshape(B * N, 1, L)
         hidden_acts = []
@@ -116,17 +121,19 @@ class TCRPAnalyser:
         return R_z_flat.view(B, N, d)
 
     def _encode_relevance(self, hidden_acts: list, final_act: Tensor, R_z: Tensor) -> Tensor:
-        BNd, d = R_z.shape[0] * R_z.shape[1], R_z.shape[2]
-        R = R_z.reshape(BNd, d)
+        B, N, d = R_z.shape
+        R = R_z.reshape(B * N, d)
         R_current = lrp_mean_pool(final_act.detach(), R)
 
         for a0, x1, x1_relu, x2, x2_relu, residual, block in reversed(hidden_acts):
             eps = self.eps
-            main = x2_relu
-            res = residual
-            denom = torch.abs(main) + torch.abs(res) + eps
-            R_main = R_current * (torch.abs(main) / denom)
-            R_res = R_current * (torch.abs(res) / denom)
+            # Split relevance between main path (x2_relu) and residual branch.
+            # Use exact conservation: R_main + R_res = R_current.
+            abs_main = torch.abs(x2_relu)
+            abs_res  = torch.abs(residual)
+            safe_total = (abs_main + abs_res).clamp(min=eps)
+            R_main = R_current * abs_main / safe_total
+            R_res  = R_current - R_main   # exact: no eps leak
 
             R_main = lrp_relu(x2, R_main)
             R_main = lrp_gamma_conv(block.conv2, x1_relu, R_main, gamma=0.25, eps=eps)
@@ -140,10 +147,7 @@ class TCRPAnalyser:
 
             R_current = R_a0 + R_res_in
 
-        B = R_current.shape[0] // self.model.segmenter._start_indices.shape[0]
-        N = self.model.segmenter._start_indices.shape[0]
-        L = R_current.shape[-1]
-        return R_current.view(B, N, L)
+        return R_current.view(B, N, R_current.shape[-1])
 
     def _assemble_relevance(self, R_s: Tensor, starts: Tensor, overlap: Tensor, T: int) -> Tensor:
         B, N, L = R_s.shape
@@ -151,18 +155,20 @@ class TCRPAnalyser:
         for n in range(N):
             start = starts[n].item()
             R_x[:, start:start + L] += R_s[:, n, :]
-        R_x = R_x / overlap.unsqueeze(0)
+        # clamp(min=1) avoids divide-by-zero for timesteps not covered by any segment
+        R_x = R_x / overlap.clamp(min=1).unsqueeze(0)
         return R_x
 
     def _assemble_concept_conditional(self, R_s: Tensor, R_A: Tensor, starts: Tensor, overlap: Tensor, T: int) -> Tensor:
         B, N, L = R_s.shape
         K = R_A.shape[-1]
         weight = R_A / (R_A.sum(dim=2, keepdim=True) + self.eps)
+        safe_overlap = overlap.clamp(min=1)
         R_x_cond = torch.zeros(B, K, T, device=R_s.device, dtype=R_s.dtype)
         for n in range(N):
             start = starts[n].item()
             weighted = weight[:, n, :].unsqueeze(-1) * R_s[:, n, :].unsqueeze(1)
-            R_x_cond[:, :, start:start + L] += weighted / overlap.unsqueeze(0).unsqueeze(0)[:, :, start:start + L]
+            R_x_cond[:, :, start:start + L] += weighted / safe_overlap[start:start + L].unsqueeze(0).unsqueeze(0)
         return R_x_cond
 
 

@@ -267,57 +267,84 @@ class TCNEncoder(nn.Module):
         return z
 
 
-def verify_causality(
-    block: CausalDilatedBlock,
-    batch_size: int = 2,
-    seq_length: int = 100,
-    num_tests: int = 10,
-) -> bool:
+class LSTMEncoder(nn.Module):
     """
-    Verify that a CausalDilatedBlock respects causality.
-    
-    This function creates input sequences and checks that modifying future timesteps
-    does not affect past outputs.
-    
+    LSTM encoder for temporal segment encoding.
+
+    Shares weights across all N segments by processing a flattened (B*N, L, 1)
+    tensor, matching the TCNEncoder interface exactly.
+
     Args:
-        block: CausalDilatedBlock instance to test
-        batch_size: Batch size for test inputs
-        seq_length: Sequence length for test inputs
-        num_tests: Number of random modifications to test
-        
-    Returns:
-        True if causality is verified, False otherwise
+        in_ch: input channels (must be 1 for segments shaped (B, N, L))
+        hidden: LSTM hidden state dimension (d)
+        n_layers: number of stacked LSTM layers
+        bidirectional: if True, use a bidirectional LSTM and project back to hidden
+        dropout: dropout probability between LSTM layers (ignored when n_layers==1)
+        pooling: 'last' uses the final hidden state; 'mean' mean-pools over timesteps
+
+    Forward input: segments (B, N, L). Output: (B, N, d).
     """
-    block.eval()
-    device = next(block.parameters()).device
-    
-    with torch.no_grad():
-        # Create a base input
-        x = torch.randn(batch_size, block.in_channels, seq_length, device=device)
-        
-        # Get baseline output
-        y_baseline = block(x)
-        
-        # Test: modifying future timesteps shouldn't affect past outputs
-        for test_idx in range(num_tests):
-            # Create a modified input where future timesteps are perturbed
-            x_modified = x.clone()
-            
-            # Randomly choose a past timestep to check
-            check_t = torch.randint(0, seq_length - 1, (1,)).item()
-            
-            # Perturb all future timesteps
-            if check_t < seq_length - 1:
-                x_modified[:, :, check_t + 1:] += torch.randn_like(x_modified[:, :, check_t + 1:]) * 0.1
-            
-            # Get modified output
-            y_modified = block(x_modified)
-            
-            # Check if output at check_t is unchanged (up to numerical precision)
-            max_diff = (y_baseline[:, :, :check_t + 1] - y_modified[:, :, :check_t + 1]).abs().max()
-            
-            if max_diff > 1e-5:
-                print(f"Causality violation at test {test_idx}, timestep {check_t}: max_diff={max_diff}")
-                return False
-    
-    return True
+
+    def __init__(
+        self,
+        in_ch: int = 1,
+        hidden: int = 64,
+        n_layers: int = 2,
+        bidirectional: bool = False,
+        dropout: float = 0.0,
+        pooling: str = "last",
+    ):
+        super().__init__()
+
+        if pooling not in ("last", "mean"):
+            raise ValueError(f"pooling must be 'last' or 'mean', got '{pooling}'")
+
+        self.in_ch = in_ch
+        self.hidden = hidden
+        self.n_layers = n_layers
+        self.bidirectional = bidirectional
+        self.pooling = pooling
+
+        self.lstm = nn.LSTM(
+            input_size=1,
+            hidden_size=hidden,
+            num_layers=n_layers,
+            batch_first=True,
+            dropout=dropout if n_layers > 1 else 0.0,
+            bidirectional=bidirectional,
+        )
+
+        # Project 2*hidden → hidden when bidirectional so output dim is always `hidden`
+        self.proj = nn.Linear(2 * hidden, hidden, bias=False) if bidirectional else None
+
+    def forward(self, segments: Tensor) -> Tensor:
+        """
+        Args:
+            segments: (B, N, L)
+
+        Returns:
+            Tensor of shape (B, N, d)
+        """
+        if segments.dim() != 3:
+            raise ValueError(f"Expected input shape (B, N, L), got {tuple(segments.shape)}")
+
+        B, N, L = segments.shape
+
+        # Treat each timestep as a scalar input; share weights across segments
+        x = segments.reshape(B * N, L, 1)          # (B*N, L, 1)
+
+        out, (h_n, _) = self.lstm(x)               # out: (B*N, L, D), h_n: (layers*dirs, B*N, hidden)
+
+        if self.pooling == "last":
+            if self.bidirectional:
+                # h_n[-2]: last forward layer; h_n[-1]: last backward layer
+                z = torch.cat([h_n[-2], h_n[-1]], dim=-1)  # (B*N, 2*hidden)
+            else:
+                z = h_n[-1]                        # (B*N, hidden)
+        else:  # mean
+            z = out.mean(dim=1)                    # (B*N, D)
+
+        if self.proj is not None:
+            z = self.proj(z)                       # (B*N, hidden)
+
+        return z.view(B, N, self.hidden)

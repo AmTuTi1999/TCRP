@@ -35,19 +35,22 @@ class TCRPConfig:
     L: int = 20
     stride: int = 5
     d: int = 64
-    K: int = 6
+    K: int = 20                                         # recomputed in __post_init__
     periods: List[int] = field(default_factory=lambda: [24, 168])
     alpha: float = 5.0
     beta: float = 5.0
+    gamma: float = 0.5                                  # stochasticity (xi) vol-scale
+    gamma_j: float = 2.0                                # jump sigmoid sharpness
+    k_max: int = 2                                      # ACF lags
+    jump_threshold: float = 3.0                         # jump detection threshold (σ)
+    train_std: float = 1.0                              # dataset std for σ̃ normalisation
     lambda1: float = 0.1
     lambda2: float = 1e-4
     probabilistic: bool = False
-    include_gbm: bool = False
-    drift_scale: float = 5.0
-    vol_scale: float = 5.0
 
     def __post_init__(self):
-        self.K = 4 + len(self.periods) + (2 if self.include_gbm else 0)
+        # K = 16 fixed + k_max ACF lags + len(periods) periodicity scores
+        self.K = 16 + self.k_max + len(self.periods)
 
 
 class TCRPForecaster(nn.Module):
@@ -64,9 +67,11 @@ class TCRPForecaster(nn.Module):
             alpha=config.alpha,
             beta=config.beta,
             periods=config.periods,
-            include_gbm=config.include_gbm,
-            drift_scale=config.drift_scale,
-            vol_scale=config.vol_scale,
+            gamma=config.gamma,
+            gamma_j=config.gamma_j,
+            k_max=config.k_max,
+            jump_threshold=config.jump_threshold,
+            train_std=config.train_std,
         )
         self.pool = ConceptAttentionPool(K=config.K, hidden=32, temp=1.0)
         self.decoder = GaussianDecoder(config.K, config.H) if config.probabilistic else HorizonDecoder(config.K, config.H)

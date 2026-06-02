@@ -37,19 +37,13 @@ def periodicity_score(s: Tensor, periods: List[int]) -> Tensor:
     B, L = s.shape
     
     # Compute DFT via real FFT (rfft computes only positive frequencies)
-    # Output shape: (B, L//2 + 1)
     X = torch.fft.rfft(s, dim=1)
-    
-    # Power spectrum: |X[nu]|^2
     P = (X.abs() ** 2)  # shape (B, L//2 + 1)
     
-    # Total non-DC power (exclude DC component P[:, 0])
     total_power = P[:, 1:].sum(dim=1, keepdim=True)  # shape (B, 1)
     
-    # Avoid division by zero
     total_power = torch.clamp(total_power, min=1e-10)
     
-    # Compute power ratio for each period
     rho_list = []
     for p in periods:
         # Find the frequency bin corresponding to period p
@@ -58,23 +52,13 @@ def periodicity_score(s: Tensor, periods: List[int]) -> Tensor:
         # For period p samples, we want frequency 1/p, so bin nu_p = L / p
         nu_p = L / p
         nu_p_int = int(round(nu_p))
-        
-        # Clamp to valid DFT range [1, L//2]
-        # (bin 0 is DC, bins 1 to L//2 are valid positive frequencies)
         nu_p_int = max(1, min(nu_p_int, L // 2))
-        
-        # Extract power at this bin
-        rho_p = P[:, nu_p_int] / total_power[:, 0]  # shape (B,)
-        
-        # Clamp to [0, 1] to handle numerical edge cases
+        rho_p = P[:, nu_p_int] / total_power[:, 0]
         rho_p = torch.clamp(rho_p, 0.0, 1.0)
         
         rho_list.append(rho_p)
-    
-    # Stack all rho values
     rho = torch.stack(rho_list, dim=1)  # shape (B, len(periods))
-    
-    # Squeeze batch dimension if input was 1D
+
     if squeeze_output:
         rho = rho.squeeze(0)
     

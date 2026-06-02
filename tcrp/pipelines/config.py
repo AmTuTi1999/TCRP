@@ -24,6 +24,7 @@ class PipelineConfig:
     stride: int = 5                                # segmentation stride
     d: int = 64                                    # encoder hidden dim
     periods: List[int] = field(default_factory=lambda: [24, 168])
+    k_max: int = 2                                 # number of ACF lags in concept vector
     alpha: float = 5.0                             # monotonicity temperature
     beta: float = 5.0                              # curvature temperature
     lambda1: float = 0.1                           # alignment loss weight
@@ -48,7 +49,8 @@ class PipelineConfig:
 
     @property
     def K(self) -> int:
-        return 4 + len(self.periods)
+        # Mirrors TCRPConfig.__post_init__: 16 fixed + k_max ACF lags + periodicity scores
+        return 16 + self.k_max + len(self.periods)
 
 
 def load_config(path: str | Path) -> PipelineConfig:

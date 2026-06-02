@@ -194,7 +194,6 @@ def run(cfg: PipelineConfig) -> dict:
         alpha=cfg.alpha, beta=cfg.beta,
         lambda1=cfg.lambda1, lambda2=cfg.lambda2,
         probabilistic=cfg.probabilistic,
-        include_gbm=cfg.include_gbm,
     )
     model = TCRPForecaster(model_cfg)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

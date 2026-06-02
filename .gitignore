@@ -1,1 +1,6 @@
 /tcrp/data/
+/figures/
+/checkpoints/
+**/__pycache__/
+**/*.pyc
+**/*.pkl
