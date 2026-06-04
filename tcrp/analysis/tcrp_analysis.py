@@ -9,10 +9,10 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from tcrp.analysis.lrp import lrp_gamma_conv, lrp_linear_eps, lrp_mean_pool, lrp_relu
-from tcrp.model.bottleneck import ConceptProjection
-from tcrp.model.decoder import HorizonDecoder, GaussianDecoder
-from tcrp.model.encoder import TCNEncoder, LSTMEncoder, CausalDilatedBlock
-from tcrp.model.forecaster import TCRPForecaster
+from tcrp.model.tcrp_forecaster.components.bottleneck import ConceptProjection
+from tcrp.model.tcrp_forecaster.components.decoder import HorizonDecoder, GaussianDecoder
+from tcrp.model.tcrp_forecaster.components.encoder import TCNEncoder, LSTMEncoder, CausalDilatedBlock
+from tcrp.model.tcrp_forecaster.forecaster import TCRPForecaster
 
 
 @dataclass

@@ -1,0 +1,12 @@
+# @package _global_
+# Overrides train.yaml for etth1_H720
+defaults:
+  - override /datasets: etth1
+
+T:      720
+H:      720
+run_name: etth1_H720
+models:
+  L:      30
+  stride: 1
+include_gbm: true

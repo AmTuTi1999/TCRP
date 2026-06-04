@@ -6,7 +6,8 @@ Run from the project root:
 """
 from __future__ import annotations
 
-import random, json, argparse
+import os, sys
+import hydra
 import time
 from pathlib import Path
 from typing import Tuple
@@ -19,41 +20,35 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
 from tcrp.dataset.datasets import TimeSeriesDataset, DATASET_META
-from tcrp.dataset.preprocessing import inverse_transform
-from tcrp.model.forecaster import TCRPConfig, TCRPForecaster
+from tcrp.model.tcrp_forecaster.components.adversarial import AdversarialTCRPForecaster
+from tcrp.model.baselines import build_baseline
+from tcrp.model.tcrp_forecaster.forecaster import TCRPConfig, TCRPForecaster
+from tcrp.training.adversarial_trainer import AdversarialTrainer
+from tcrp.training.baseline_trainer import BaselineTrainer
 from tcrp.training.losses import LossBundle, TCRPLoss
 from tcrp.training.trainer import Trainer
-
-from .config import PipelineConfig, load_config
-
-
-# ── Utilities ───────────────────────────────────────────────────────────────
-
-def _seed_everything(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+from tcrp.utils import elapsed_str, seed_everything, eval_denorm, save_results, now_iso
+from tcrp.pipelines.config import tcrp_config_from_hydra
 
 
-def build_loaders(cfg: PipelineConfig) -> Tuple[DataLoader, DataLoader, DataLoader, np.ndarray, np.ndarray]:
+from omegaconf import DictConfig
+
+def build_loaders(cfg: DictConfig) -> Tuple[DataLoader, DataLoader, DataLoader, np.ndarray, np.ndarray]:
     """Return (train, val, test) DataLoaders plus train-split mean and std."""
-    meta = DATASET_META[cfg.dataset]
-    path = str(Path(cfg.data_root) / meta["filename"])
-
-    # None → TimeSeriesDataset falls back to last numeric column
-    target_col = cfg.target_col if cfg.univariate else None
-
+    ds  = cfg.datasets
+    tr  = cfg.trainers
+    meta = DATASET_META[ds.dataset]
+    path = str(Path(ds.data_root) / meta["filename"])
+    target_col = ds.target_col if ds.univariate else None
     loader_kw = dict(
-        batch_size=cfg.batch_size,
-        num_workers=cfg.num_workers,
+        batch_size=tr.batch_size,
+        num_workers=tr.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
     splits = {
         split: TimeSeriesDataset(
             path=path, split=split, T=cfg.T, H=cfg.H,
-            normalise=True, target_col=target_col, univariate=cfg.univariate,
+            normalise=True, target_col=target_col, univariate=ds.univariate,
         )
         for split in ("train", "val", "test")
     }
@@ -66,30 +61,6 @@ def build_loaders(cfg: PipelineConfig) -> Tuple[DataLoader, DataLoader, DataLoad
     )
 
 
-def _eval_denorm(
-    model: nn.Module,
-    loader: DataLoader,
-    mean: np.ndarray,
-    std: np.ndarray,
-    device: torch.device,
-) -> dict:
-    """Evaluate model, returning denormalised MSE / MAE / RMSE."""
-    model.eval()
-    preds, targets = [], []
-    with torch.no_grad():
-        for x, y in loader:
-            out = model(x.to(device))
-            preds.append(inverse_transform(out.y_hat.cpu(), mean, std))
-            targets.append(inverse_transform(y, mean, std))
-    p = torch.cat(preds)
-    t = torch.cat(targets)
-    mse  = float(torch.mean((p - t) ** 2))
-    mae  = float(torch.mean(torch.abs(p - t)))
-    return {"mse": round(mse, 6), "mae": round(mae, 6), "rmse": round(mse ** 0.5, 6)}
-
-
-# ── PipelineTrainer ─────────────────────────────────────────────────────────
-
 class PipelineTrainer(Trainer):
     """Extends Trainer with configurable LR, grad clipping, and ES patience."""
 
@@ -97,7 +68,7 @@ class PipelineTrainer(Trainer):
         self,
         model: nn.Module,
         tcrp_cfg: TCRPConfig,
-        pipeline_cfg: PipelineConfig,
+        pipeline_cfg: DictConfig,
         device: torch.device | None = None,
     ) -> None:
         super().__init__(model, tcrp_cfg, device=device)
@@ -164,18 +135,85 @@ class PipelineTrainer(Trainer):
                 break
 
 
-# ── Main pipeline function ───────────────────────────────────────────────────
+class AdversarialPipelineTrainer(AdversarialTrainer):
+    """Extends AdversarialTrainer with configurable LR, grad clipping, ES patience."""
 
-def run(cfg: PipelineConfig) -> dict:
+    def __init__(
+        self,
+        model: AdversarialTCRPForecaster,
+        tcrp_cfg: TCRPConfig,
+        pipeline_cfg: DictConfig,
+        device: torch.device | None = None,
+    ) -> None:
+        super().__init__(model, tcrp_cfg, device=device)
+        for pg in self.optimizer.param_groups:
+            pg["lr"] = pipeline_cfg.lr
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode="min",
+            patience=pipeline_cfg.lr_patience,
+            factor=pipeline_cfg.lr_factor,
+        )
+        self._es_patience = pipeline_cfg.early_stopping_patience
+
+    def fit(self, train_loader: DataLoader, val_loader: DataLoader, max_epochs: int = 100) -> None:
+        from tcrp.model.tcrp_forecaster.components.adversarial import grl_alpha_schedule
+
+        for epoch in range(1, max_epochs + 1):
+            alpha = grl_alpha_schedule(
+                epoch - 1, max_epochs,
+                warmup_epochs=self.config.warmup_epochs,
+                alpha_max=self.config.alpha_max,
+            )
+            self.model.set_alpha(alpha)
+
+            train_lb = self.train_epoch(train_loader)
+            val_m    = self.validate(val_loader)
+            self.scheduler.step(val_m["mse"])
+            lr = self.optimizer.param_groups[0]["lr"]
+
+            stab = ""
+            if train_lb.stab_loss is not None:
+                stab = f" | {train_lb.stab_loss.item():10.6f}"
+
+            print(
+                f"{epoch:6d} | α={alpha:.3f} | {train_lb.forecast_loss.item():10.6f} | "
+                f"{val_m['mse']:10.6f} | {val_m['align_loss']:10.6f}{stab} | {lr:10.2e}"
+            )
+
+            if val_m["mse"] < self.best_val_mse:
+                self.best_val_mse = val_m["mse"]
+                self.epochs_no_improve = 0
+                torch.save(self.model.state_dict(), self.checkpoint_path)
+            else:
+                self.epochs_no_improve += 1
+            if self.epochs_no_improve >= self._es_patience:
+                print(f"Early stopping at epoch {epoch} ({self.epochs_no_improve} epochs without improvement)")
+                break
+
+
+_BASELINE_TYPES = {"nbeats", "lstm", "tcn"}
+
+
+def run(cfg: DictConfig) -> dict:
     """Build data, model, and trainer; run training; evaluate on test set."""
-    _seed_everything(cfg.seed)
-    device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    run_name = cfg.run_name or f"{cfg.dataset}_T{cfg.T}_H{cfg.H}"
+    seed_everything(cfg.seed)
+    dataset_cfg = cfg.datasets
+    trainer_cfg = cfg.trainers
+    model_cfg   = cfg.models
 
-    print(f"{'=' * 62}")
-    print(f"  TCRP Training — {run_name}")
-    print(f"  device={device}  seed={cfg.seed}  lr={cfg.lr}  clip={cfg.grad_clip}")
-    print(f"{'=' * 62}")
+    device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    run_name = cfg.run_name or f"{dataset_cfg.dataset}_{cfg.model_type}_T{cfg.T}_H{cfg.H}"
+
+    is_baseline = cfg.model_type.lower() in _BASELINE_TYPES
+    mode_str = cfg.model_type + ("-adv" if model_cfg.adversarial and not is_baseline else "")
+    print(f"{'=' * 66}")
+    print(f"  Training [{mode_str}] — {run_name}")
+    print(f"  device={device}  seed={trainer_cfg.seed}  lr={trainer_cfg.lr}  clip={trainer_cfg.grad_clip}")
+    if model_cfg.adversarial and not is_baseline:
+        print(f"  alpha_max={model_cfg.alpha_max}  warmup={model_cfg.warmup_epochs}  lambda3={model_cfg.lambda3}")
+    if is_baseline:
+        print(f"  hidden={model_cfg.baseline_hidden}  layers={model_cfg.baseline_layers}")
+    print(f"{'=' * 66}")
 
     # ── Data ────────────────────────────────────────────────────────────
     train_loader, val_loader, test_loader, mean, std = build_loaders(cfg)
@@ -188,47 +226,83 @@ def run(cfg: PipelineConfig) -> dict:
     )
 
     # ── Model ───────────────────────────────────────────────────────────
-    model_cfg = TCRPConfig(
-        T=cfg.T, H=cfg.H, L=cfg.L, stride=cfg.stride,
-        d=cfg.d, periods=cfg.periods,
-        alpha=cfg.alpha, beta=cfg.beta,
-        lambda1=cfg.lambda1, lambda2=cfg.lambda2,
-        probabilistic=cfg.probabilistic,
-    )
-    model = TCRPForecaster(model_cfg)
-    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    n_segs   = (cfg.T - cfg.L) // cfg.stride + 1
-    print(f"Params  {n_params:,}  K={model_cfg.K}  N~{n_segs} segments/window")
-
-    # ── Trainer ─────────────────────────────────────────────────────────
     ckpt_dir = Path(cfg.checkpoint_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_path = str(ckpt_dir / f"{run_name}_best.pt")
 
-    trainer = PipelineTrainer(model, model_cfg, cfg, device=device)
-    trainer.checkpoint_path = str(ckpt_dir / f"{run_name}_best.pt")
+    if is_baseline:
+        model = build_baseline(
+            cfg.model_type, cfg.T, cfg.H,
+            hidden=model_cfg.baseline_hidden,
+            n_layers=model_cfg.baseline_layers,
+        )
+        n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Params  {n_params:,}")
 
-    print(f"\n{'Epoch':>6} | {'train_MSE':>10} | {'val_MSE':>10} | {'align':>10} | {'lr':>10}")
-    print("-" * 62)
+        trainer = BaselineTrainer(
+            model,
+            lr=trainer_cfg.lr,
+            lr_patience=trainer_cfg.lr_patience,
+            lr_factor=trainer_cfg.lr_factor,
+            grad_clip=trainer_cfg.grad_clip,
+            es_patience=trainer_cfg.early_stopping_patience,
+            checkpoint_path=ckpt_path,
+            device=device,
+        )
+        header = f"\n{'Epoch':>6} | {'train_MSE':>10} | {'val_MSE':>10} | {'val_MAE':>10} | {'lr':>10}"
+        sep    = "-" * 58
 
+    else:
+        model_cfg: TCRPConfig = tcrp_config_from_hydra(cfg)
+        base_model = TCRPForecaster(model_cfg)
+        if model_cfg.adversarial:
+            model = AdversarialTCRPForecaster(base_model, alpha=0.0)
+        else:
+            model = base_model
+        n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        n_segs   = (cfg.T - model_cfg.L) // model_cfg.stride + 1
+        print(f"Params  {n_params:,}  K={model_cfg.K}  N~{n_segs} segments/window")
+
+        if model_cfg.adversarial:
+            trainer = AdversarialPipelineTrainer(model, model_cfg, trainer_cfg, device=device)
+            header = f"\n{'Epoch':>6} | {'α':>7} | {'train_MSE':>10} | {'val_MSE':>10} | {'align':>10} | {'stab':>10} | {'lr':>10}"
+            sep    = "-" * 74
+        else:
+            trainer = PipelineTrainer(model, model_cfg, trainer_cfg, device=device)
+            header = f"\n{'Epoch':>6} | {'train_MSE':>10} | {'val_MSE':>10} | {'align':>10} | {'lr':>10}"
+            sep    = "-" * 62
+        trainer.checkpoint_path = ckpt_path
+
+    print(header)
+    print(sep)
+
+    started_at = now_iso()
     t0 = time.time()
-    trainer.fit(train_loader, val_loader, max_epochs=cfg.max_epochs)
-    elapsed = time.time() - t0
+    trainer.fit(train_loader, val_loader, max_epochs=trainer_cfg.max_epochs)
+    train_elapsed = time.time() - t0
 
     # ── Test evaluation (denormalised) ───────────────────────────────────
     model.load_state_dict(
         torch.load(trainer.checkpoint_path, map_location=device, weights_only=True)
     )
-    val_m  = _eval_denorm(model, val_loader,  mean, std, device)
-    test_m = _eval_denorm(model, test_loader, mean, std, device)
+    val_m  = eval_denorm(model, val_loader,  mean, std, device)
+    test_m = eval_denorm(model, test_loader, mean, std, device)
+
+    total_elapsed = time.time() - t0
 
     # ── Persist results ──────────────────────────────────────────────────
     results = {
         "run_name":          run_name,
-        "dataset":           cfg.dataset,
+        "model_type":        cfg.model_type,
+        "dataset":           dataset_cfg.dataset,
         "T":                 cfg.T,
         "H":                 cfg.H,
         "n_params":          n_params,
-        "train_time_s":      round(elapsed, 1),
+        "started_at":        started_at,
+        "finished_at":       now_iso(),
+        "train_elapsed_s":   round(train_elapsed, 1),
+        "total_elapsed_s":   round(total_elapsed, 1),
+        "elapsed_str":       elapsed_str(total_elapsed),
         "best_val_mse_norm": round(trainer.best_val_mse, 6),
         "val_mse":           val_m["mse"],
         "val_mae":           val_m["mae"],
@@ -237,47 +311,30 @@ def run(cfg: PipelineConfig) -> dict:
         "test_mae":          test_m["mae"],
         "test_rmse":         test_m["rmse"],
     }
-    results_path = ckpt_dir / f"{run_name}_results.json"
-    results_path.write_text(json.dumps(results, indent=2))
+    results_path = save_results(results, run_name)
 
     print(f"\n{'─' * 40}")
     print(f"  val   MSE={val_m['mse']:.4f}  MAE={val_m['mae']:.4f}  RMSE={val_m['rmse']:.4f}")
     print(f"  test  MSE={test_m['mse']:.4f}  MAE={test_m['mae']:.4f}  RMSE={test_m['rmse']:.4f}")
-    print(f"  time  {elapsed:.1f}s")
+    print(f"  time  {elapsed_str(total_elapsed)}  ({total_elapsed:.1f}s)")
     print(f"  ckpt  {trainer.checkpoint_path}")
     print(f"  json  {results_path}")
     return results
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
+@hydra.main(version_base=None, config_path="../../configs", config_name="train")
+def main(cfg: DictConfig):
+    """Run the heart disease training pipeline.
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Train a TCRP model. Must be run from the project root."
-    )
-    parser.add_argument("--config",   required=True,  help="Path to YAML config")
-    parser.add_argument("--dataset",  default=None,   help="Override dataset name")
-    parser.add_argument("--T",        type=int,       help="Look-back window")
-    parser.add_argument("--H",        type=int,       help="Forecast horizon")
-    parser.add_argument("--epochs",   type=int,       help="Max training epochs")
-    parser.add_argument("--lr",       type=float,     help="Learning rate")
-    parser.add_argument("--batch",    type=int,       help="Batch size")
-    parser.add_argument("--seed",     type=int,       help="Random seed")
-    parser.add_argument("--run-name", default=None,   help="Checkpoint/results filename prefix")
-    args = parser.parse_args()
-
-    cfg = load_config(args.config)
-    if args.dataset:  cfg.dataset    = args.dataset
-    if args.T:        cfg.T          = args.T
-    if args.H:        cfg.H          = args.H
-    if args.epochs:   cfg.max_epochs = args.epochs
-    if args.lr:       cfg.lr         = args.lr
-    if args.batch:    cfg.batch_size = args.batch
-    if args.seed:     cfg.seed       = args.seed
-    if args.run_name: cfg.run_name   = args.run_name
-
+    Args:
+        cfg (DictConfig): Configuration for the experiment including model, data, and cross-validation parameters.
+    """
+    # Initialize and run the training pipeline
     run(cfg)
-
+    # Run the main function
 
 if __name__ == "__main__":
+    os.environ["HYDRA_FULL_ERROR"] = "1"  # Set this to get full error messages
+    print(sys.path)
     main()

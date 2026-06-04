@@ -7,7 +7,8 @@
       "Bash(find \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\TCRP\\\\tcrp\" -type f -name \"*.py\")",
       "Bash(python -c ' *)",
       "Bash(python *)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(xargs grep -l \"stability_loss\")"
     ]
   }
 }

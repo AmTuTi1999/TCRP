@@ -1,0 +1,9 @@
+# GEFCOM2014 — Global Energy Forecasting Competition 2014, hourly load
+# ~8 760 rows  |  target: LOAD (MW)
+# Splits: train 60% / val 20% / test 20%
+
+dataset:    GEFCOM2014
+data_root:  tcrp/data/raw
+univariate: true
+target_col: LOAD
+periods:    [24, 168]   # 24h daily cycle, 168h weekly cycle

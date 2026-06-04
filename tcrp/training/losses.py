@@ -1,11 +1,14 @@
 """Loss utilities for TCRP training."""
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from tcrp.model.bottleneck import alignment_loss, ConceptProjection
+from tcrp.model.tcrp_forecaster.components.bottleneck import alignment_loss, ConceptProjection
 
 
 @dataclass
@@ -14,6 +17,7 @@ class LossBundle:
     align_loss: Tensor
     reg_loss: Tensor
     total_loss: Tensor
+    stab_loss: Optional[Tensor] = None
 
 
 class TCRPLoss:

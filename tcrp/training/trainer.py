@@ -8,8 +8,8 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
-from tcrp.model.bottleneck import alignment_loss
-from tcrp.model.forecaster import TCRPConfig
+from tcrp.model.tcrp_forecaster.components.bottleneck import alignment_loss
+from tcrp.model.tcrp_forecaster.forecaster import TCRPConfig
 from tcrp.training.losses import LossBundle, TCRPLoss
 
 

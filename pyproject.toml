@@ -1,0 +1,88 @@
+[tool.poetry]
+name        = "tcrp"
+version     = "0.1.0"
+description = "Temporal Concept-Regularised Prediction — interpretable time-series forecasting"
+authors     = ["Amadeo Tunyi <amadeo.tunyi@yahoo.com>"]
+readme      = "README.md"
+packages    = [{ include = "tcrp" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+# ── Core ML ──────────────────────────────────────────────────────────────────
+numpy        = "^2.1"
+pandas       = "^2.2"
+scikit-learn = "^1.6"
+scipy        = "^1.14"
+
+# ── Deep learning ─────────────────────────────────────────────────────────────
+torch = "^2.5"
+
+# ── Config / I/O ──────────────────────────────────────────────────────────────
+pyyaml = "^6.0"
+
+# ── Experiment tracking ───────────────────────────────────────────────────────
+mlflow = "^2.17"
+
+# ── Visualisation ─────────────────────────────────────────────────────────────
+matplotlib = "^3.10"
+seaborn    = "^0.13"
+
+# ── Notebooks ─────────────────────────────────────────────────────────────────
+jupyterlab = "^4.3"
+ipywidgets = "^8.1"
+tqdm       = "^4.67"
+
+[tool.poetry.group.dev.dependencies]
+# ── Formatting & linting ──────────────────────────────────────────────────────
+black       = "^25.1"
+ruff        = "^0.9"
+pre-commit  = "^4.0"
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest         = "^8.3"
+pytest-cov     = "^6.0"
+pytest-timeout = "^2.3"
+
+# ── Type checking ─────────────────────────────────────────────────────────────
+mypy = "^1.13"
+
+[build-system]
+requires      = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+# ── Tool config ───────────────────────────────────────────────────────────────
+
+[tool.black]
+line-length    = 88
+target-version = ["py312"]
+
+[tool.ruff]
+line-length    = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E203", "E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tcrp"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**"              = ["B", "S"]
+"tcrp/**/test_*.py"     = ["B", "S"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "tcrp"]
+addopts   = "-q"
+# Run with coverage explicitly: pytest --cov=tcrp --cov-report=term-missing
+markers   = [
+    "slow: marks tests as slow — skip with -m 'not slow'",
+]
+
+[tool.mypy]
+python_version         = "3.12"
+ignore_missing_imports = true
+strict                 = false
+warn_unused_ignores    = true

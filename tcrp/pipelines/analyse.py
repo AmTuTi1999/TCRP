@@ -21,7 +21,7 @@ from typing import Optional
 import torch
 
 from tcrp.analysis.tcrp_analysis import TCRPAnalyser, TCRPExplanation, verify_conservation
-from tcrp.model.forecaster import TCRPConfig, TCRPForecaster
+from tcrp.model.tcrp_forecaster.forecaster import TCRPConfig, TCRPForecaster
 
 from tcrp.dataset.datasets import DATASET_META
 

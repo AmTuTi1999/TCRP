@@ -14,7 +14,7 @@ from pathlib import Path
 import torch
 
 from tcrp.dataset.preprocessing import inverse_transform
-from tcrp.model.forecaster import TCRPConfig, TCRPForecaster
+from tcrp.model.tcrp_forecaster.forecaster import TCRPConfig, TCRPForecaster
 
 from .config import PipelineConfig, load_config
 from .train import build_loaders

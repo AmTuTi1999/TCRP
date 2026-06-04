@@ -24,6 +24,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+
 from .monotonicity import soft_monotonicity
 from .curvature import soft_curvature
 from .periodicity import periodicity_score
@@ -74,6 +75,7 @@ class ConceptScorer(nn.Module):
         self.jump_threshold = jump_threshold
         self.train_std = train_std
         self.num_concepts = 16 + k_max + len(self.periods)
+
 
     @property
     def concept_names(self) -> List[str]:

@@ -8,24 +8,35 @@ Exports:
   - CausalDilatedBlock: Dilated causal TCN block (T-06)
 """
 
-from .segmentation import Segmenter
-from .encoder import CausalDilatedBlock, TCNEncoder, LSTMEncoder
-from .bottleneck import ConceptProjection, alignment_loss
-from .aggregation import ConceptAttentionPool
-from .decoder import HorizonDecoder, GaussianDecoder
-from .forecaster import TCRPConfig, TCRPForecaster, TCRPOutput
+from .tcrp_forecaster.components.segmentation import Segmenter
+from .tcrp_forecaster.components.encoder import BaseEncoder, CausalDilatedBlock, TCNEncoder, LSTMEncoder
+from .tcrp_forecaster.components.bottleneck import ConceptProjection, alignment_loss, stability_loss
+from .tcrp_forecaster.components.aggregation import ConceptAttentionPool
+from .tcrp_forecaster.components.decoder import BaseDecoder, HorizonDecoder, GaussianDecoder
+from .tcrp_forecaster.forecaster import TCRPConfig, TCRPForecaster, TCRPOutput
+from .tcrp_forecaster.components.adversarial import GRLLayer, grl_alpha_schedule, AdversarialTCRPForecaster
+from .baselines import NBeats, LSTMForecaster, TCNForecaster, BaselineOutput, build_baseline
+from .configs import (
+    TCNEncoderConfig, LSTMEncoderConfig,
+    HorizonDecoderConfig, GaussianDecoderConfig,
+    SegmenterConfig, ConceptScorerConfig, ConceptAttentionPoolConfig,
+)
 
 __all__ = [
+    # Components
     "Segmenter",
-    "CausalDilatedBlock",
-    "TCNEncoder",
-    "LSTMEncoder",
-    "ConceptProjection",
-    "alignment_loss",
+    "BaseEncoder", "CausalDilatedBlock", "TCNEncoder", "LSTMEncoder",
+    "ConceptProjection", "alignment_loss", "stability_loss",
     "ConceptAttentionPool",
-    "HorizonDecoder",
-    "GaussianDecoder",
-    "TCRPConfig",
-    "TCRPForecaster",
-    "TCRPOutput",
+    "BaseDecoder", "HorizonDecoder", "GaussianDecoder",
+    # Core model
+    "TCRPConfig", "TCRPForecaster", "TCRPOutput",
+    # Adversarial
+    "GRLLayer", "grl_alpha_schedule", "AdversarialTCRPForecaster",
+    # Baselines
+    "NBeats", "LSTMForecaster", "TCNForecaster", "BaselineOutput", "build_baseline",
+    # Component configs
+    "TCNEncoderConfig", "LSTMEncoderConfig",
+    "HorizonDecoderConfig", "GaussianDecoderConfig",
+    "SegmenterConfig", "ConceptScorerConfig", "ConceptAttentionPoolConfig",
 ]

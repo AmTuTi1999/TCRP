@@ -1,0 +1,10 @@
+# ETTh1 — Electricity Transformer Temperature, 1-hour granularity
+# 17 420 rows  |  target: OT
+# Splits: train 60% / val 20% / test 20%
+
+dataset:    ETTh1
+data_root:  tcrp/data/raw
+univariate: true
+target_col: OT
+periods:    [24, 168]   # 24h daily cycle, 168h weekly cycle
+

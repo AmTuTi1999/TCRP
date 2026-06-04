@@ -18,7 +18,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 
-# Per-dataset metadata: CSV filename, target column for univariate mode,
+# Per-dataset metadata: CSVfilename, target column for univariate mode,
 # and the name of any date/timestamp column to drop.
 DATASET_META: dict = {
     "ETTh1": {

@@ -1,0 +1,9 @@
+# ETTm2 — Electricity Transformer Temperature, 15-minute granularity
+# 69 680 rows  |  target: OT
+# Splits: train 60% / val 20% / test 20%
+
+dataset:    ETTm2
+data_root:  tcrp/data/raw
+univariate: true
+target_col: OT
+periods:    [96, 672]   # 96×15min=24h daily, 672×15min=weekly

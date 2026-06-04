@@ -1,0 +1,33 @@
+# TCRP model architecture defaults (TCRPConfig fields, excluding data/experiment params)
+
+L:      20
+stride: 5
+periods: [24, 168]
+k_max:  2
+alpha:  5.0
+beta:   5.0
+gamma:  0.5
+gamma_j: 2.0
+jump_threshold: 3.0
+train_std: 1.0
+lambda1: 0.1
+lambda2: 1.0e-4
+lambda3: 0.01
+probabilistic: false
+adversarial: false
+alpha_max: 1.0
+warmup_epochs: 20
+
+# Encoder
+encoder_in_ch:               1
+encoder_hidden:              64
+tcn_encoder_n_layers:        4
+tcn_encoder_kernel_size:     3
+tcn_encoder_use_weight_norm: true
+lstm_encoder_bidirectional:  false
+lstm_encoder_dropout:        0.0
+lstm_encoder_pooling:        last
+
+# Attention pool
+attention_hidden: 32
+attention_temp:   1.0

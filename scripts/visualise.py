@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tcrp.analysis.tcrp_analysis import TCRPAnalyser
 from tcrp.dataset.datasets import DATASET_META
-from tcrp.model.forecaster import TCRPConfig, TCRPForecaster
+from tcrp.model.tcrp_forecaster.forecaster import TCRPConfig, TCRPForecaster
 from tcrp.pipelines.config import PipelineConfig, load_config
 from tcrp.pipelines.train import build_loaders
 

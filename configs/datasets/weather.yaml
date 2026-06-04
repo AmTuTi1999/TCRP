@@ -1,0 +1,9 @@
+# Weather — Max-Planck meteorological station, 10-minute granularity
+# 52 696 rows  |  target: last column
+# Splits: train 60% / val 20% / test 20%
+
+dataset:    Weather
+data_root:  tcrp/data/raw
+univariate: true
+target_col: null
+periods:    [144, 1008]   # 144×10min=24h daily, 1008×10min=weekly
