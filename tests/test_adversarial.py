@@ -4,6 +4,7 @@ Phase T*-07 · Adversarial Unit Tests
 Covers T*-01 through T*-05 as specified in the Phase T* plan.
 Run with:  pytest tests/test_adversarial.py -v
 """
+
 from __future__ import annotations
 
 import math
@@ -15,24 +16,36 @@ import torch.nn.functional as F
 
 from tcrp.model.tcrp_forecaster.components.adversarial import (
     AdversarialTCRPForecaster,
-    GradientReversal,
     GRLLayer,
     grl_alpha_schedule,
 )
-from tcrp.model.tcrp_forecaster.components.bottleneck import alignment_loss, stability_loss
+from tcrp.model.tcrp_forecaster.components.bottleneck import (
+    alignment_loss,
+    stability_loss,
+)
 from tcrp.model.tcrp_forecaster.forecaster import TCRPConfig, TCRPForecaster
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def small_config() -> TCRPConfig:
     return TCRPConfig(
-        T=100, H=12, L=10, stride=5, d=16, k_max=1,
-        periods=[24], lambda1=0.1, lambda2=1e-4, lambda3=0.01,
-        adversarial=True, alpha_max=1.0, warmup_epochs=5,
+        T=100,
+        H=12,
+        L=10,
+        stride=5,
+        d=16,
+        k_max=1,
+        periods=[24],
+        lambda1=0.1,
+        lambda2=1e-4,
+        lambda3=0.01,
+        adversarial=True,
+        alpha_max=1.0,
+        warmup_epochs=5,
     )
 
 
@@ -45,6 +58,7 @@ def adv_model(small_config: TCRPConfig) -> AdversarialTCRPForecaster:
 # ---------------------------------------------------------------------------
 # T*-01 GRL layer tests
 # ---------------------------------------------------------------------------
+
 
 class TestGRLLayer:
     def test_grl_forward_identity(self):
@@ -60,8 +74,9 @@ class TestGRLLayer:
         upstream = torch.ones_like(out)
         out.backward(upstream)
         expected = -upstream
-        assert torch.allclose(x.grad, expected), \
-            "GRL backward with alpha=1 must negate gradient"
+        assert torch.allclose(
+            x.grad, expected
+        ), "GRL backward with alpha=1 must negate gradient"
 
     def test_grl_alpha_zero(self):
         """alpha=0 → GRL acts as stop-gradient (zero gradient to input)."""
@@ -69,8 +84,9 @@ class TestGRLLayer:
         x = torch.randn(3, 5, requires_grad=True)
         out = grl(x)
         out.sum().backward()
-        assert torch.allclose(x.grad, torch.zeros_like(x.grad)), \
-            "alpha=0 must produce zero gradient (stop-gradient)"
+        assert torch.allclose(
+            x.grad, torch.zeros_like(x.grad)
+        ), "alpha=0 must produce zero gradient (stop-gradient)"
 
     def test_grl_alpha_one(self):
         """alpha=1 → gradient fully negated."""
@@ -79,8 +95,7 @@ class TestGRLLayer:
         out = grl(x)
         upstream = torch.randn_like(out)
         out.backward(upstream)
-        assert torch.allclose(x.grad, -upstream), \
-            "alpha=1 must fully negate gradient"
+        assert torch.allclose(x.grad, -upstream), "alpha=1 must fully negate gradient"
 
     def test_grl_alpha_scaling(self):
         """Gradient is scaled by alpha."""
@@ -90,8 +105,9 @@ class TestGRLLayer:
         out = grl(x)
         upstream = torch.ones_like(out)
         out.backward(upstream)
-        assert torch.allclose(x.grad, -alpha * upstream), \
-            "GRL gradient must be -alpha * upstream"
+        assert torch.allclose(
+            x.grad, -alpha * upstream
+        ), "GRL gradient must be -alpha * upstream"
 
     def test_two_path_backward(self):
         """
@@ -103,8 +119,7 @@ class TestGRLLayer:
           (b) Only alignment path (no GRL, alpha=0) → encoder grad = g_al
           (c) Only alignment path (with GRL, alpha=1) → encoder grad = -g_al
         """
-        grl_off = GRLLayer(alpha=0.0)
-        grl_on  = GRLLayer(alpha=1.0)
+        grl_on = GRLLayer(alpha=1.0)
         encoder = nn.Linear(8, 4)
 
         x = torch.randn(2, 8)
@@ -114,14 +129,22 @@ class TestGRLLayer:
         L_fc = z_a.sum()
         encoder.zero_grad()
         L_fc.backward()
-        g_fc = {n: p.grad.clone() for n, p in encoder.named_parameters() if p.grad is not None}
+        g_fc = {
+            n: p.grad.clone()
+            for n, p in encoder.named_parameters()
+            if p.grad is not None
+        }
 
         # (b) Alignment path without GRL (alpha=0 stops gradient — use a plain path instead)
         z_b = encoder(x)
         L_al_plain = z_b.sum()
         encoder.zero_grad()
         L_al_plain.backward()
-        g_al = {n: p.grad.clone() for n, p in encoder.named_parameters() if p.grad is not None}
+        g_al = {
+            n: p.grad.clone()
+            for n, p in encoder.named_parameters()
+            if p.grad is not None
+        }
 
         # (c) Alignment path through GRL (alpha=1)
         z_c = encoder(x)
@@ -129,34 +152,43 @@ class TestGRLLayer:
         L_al_grl = z_grl.sum()
         encoder.zero_grad()
         L_al_grl.backward()
-        g_al_grl = {n: p.grad.clone() for n, p in encoder.named_parameters() if p.grad is not None}
+        g_al_grl = {
+            n: p.grad.clone()
+            for n, p in encoder.named_parameters()
+            if p.grad is not None
+        }
 
         # (a) and (b) should be identical (same computation, no GRL)
         for name in g_fc:
-            assert torch.allclose(g_fc[name], g_al[name], atol=1e-6), \
-                f"Forecast and plain alignment grads should match for '{name}'"
+            assert torch.allclose(
+                g_fc[name], g_al[name], atol=1e-6
+            ), f"Forecast and plain alignment grads should match for '{name}'"
 
         # (c) should be the negation of (b): GRL reverses the gradient
         for name in g_al:
-            assert torch.allclose(g_al_grl[name], -g_al[name], atol=1e-6), \
-                f"GRL-reversed gradient for '{name}' must equal -g_al"
+            assert torch.allclose(
+                g_al_grl[name], -g_al[name], atol=1e-6
+            ), f"GRL-reversed gradient for '{name}' must equal -g_al"
 
 
 # ---------------------------------------------------------------------------
 # T*-02 Alpha schedule tests
 # ---------------------------------------------------------------------------
 
+
 class TestAlphaSchedule:
     def test_schedule_warmup_zero(self):
         for e in range(20):
-            assert grl_alpha_schedule(e, 100, warmup_epochs=20) == 0.0, \
-                f"alpha must be 0 during warmup (epoch={e})"
+            assert (
+                grl_alpha_schedule(e, 100, warmup_epochs=20) == 0.0
+            ), f"alpha must be 0 during warmup (epoch={e})"
 
     def test_schedule_monotone(self):
         alphas = [grl_alpha_schedule(e, 100, warmup_epochs=20) for e in range(100)]
         post = alphas[20:]
-        assert all(post[i] <= post[i + 1] for i in range(len(post) - 1)), \
-            "alpha must be non-decreasing after warmup"
+        assert all(
+            post[i] <= post[i + 1] for i in range(len(post) - 1)
+        ), "alpha must be non-decreasing after warmup"
 
     def test_schedule_max(self):
         a = grl_alpha_schedule(9999, 10000, warmup_epochs=20, alpha_max=1.0)
@@ -164,7 +196,7 @@ class TestAlphaSchedule:
 
     def test_schedule_continuity(self):
         a_before = grl_alpha_schedule(19, 100, warmup_epochs=20)
-        a_after  = grl_alpha_schedule(20, 100, warmup_epochs=20)
+        a_after = grl_alpha_schedule(20, 100, warmup_epochs=20)
         assert a_before == 0.0
         assert a_after >= 0.0
         # No negative jump
@@ -179,8 +211,11 @@ class TestAlphaSchedule:
 # T*-03 AdversarialTCRPForecaster tests
 # ---------------------------------------------------------------------------
 
+
 class TestAdversarialForecaster:
-    def test_forward_shapes(self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig):
+    def test_forward_shapes(
+        self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig
+    ):
         x = torch.randn(2, small_config.T)
         out, A_align = adv_model(x)
         assert out.y_hat.shape == (2, small_config.H)
@@ -191,7 +226,9 @@ class TestAdversarialForecaster:
         adv_model.set_alpha(0.5)
         assert adv_model.grl.alpha == 0.5
 
-    def test_forecast_path_no_grl(self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig):
+    def test_forecast_path_no_grl(
+        self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig
+    ):
         """
         Gradient of forecast loss must NOT pass through the GRL.
         We check that the encoder receives a positive gradient from L_forecast.
@@ -213,7 +250,9 @@ class TestAdversarialForecaster:
         )
         assert enc_grad_fc > 0, "Forecast loss must produce gradients in encoder"
 
-    def test_alignment_path_through_grl(self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig):
+    def test_alignment_path_through_grl(
+        self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig
+    ):
         """
         Encoder param gradients from alignment path (via GRL with alpha=1)
         should be the negation of the natural alignment gradient (no GRL).
@@ -256,16 +295,20 @@ class TestAdversarialForecaster:
         }
 
         for name in grad_natural:
-            assert torch.allclose(grad_with_grl[name], -grad_natural[name], atol=1e-5), \
-                f"Encoder param '{name}' gradient not negated by GRL"
+            assert torch.allclose(
+                grad_with_grl[name], -grad_natural[name], atol=1e-5
+            ), f"Encoder param '{name}' gradient not negated by GRL"
 
 
 # ---------------------------------------------------------------------------
 # T*-04 Two-path backward — no mixing
 # ---------------------------------------------------------------------------
 
+
 class TestTwoPathBackward:
-    def test_two_path_backward_additive(self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig):
+    def test_two_path_backward_additive(
+        self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig
+    ):
         """
         Gradient contributions from Path 1 and Path 2 are additive and
         independent when accumulated via two separate backward() calls.
@@ -311,13 +354,15 @@ class TestTwoPathBackward:
 
         for name in grad_combined:
             expected = grad_p1[name] + grad_p2[name]
-            assert torch.allclose(grad_combined[name], expected, atol=1e-5), \
-                f"Gradient for '{name}' is not additive across the two paths"
+            assert torch.allclose(
+                grad_combined[name], expected, atol=1e-5
+            ), f"Gradient for '{name}' is not additive across the two paths"
 
 
 # ---------------------------------------------------------------------------
 # Stability loss tests
 # ---------------------------------------------------------------------------
+
 
 class TestStabilityLoss:
     def test_zero_when_identical(self):
@@ -339,20 +384,28 @@ class TestStabilityLoss:
 # T*-05 Purity score tests
 # ---------------------------------------------------------------------------
 
+
 class TestConceptPurityScore:
-    def test_purity_score_range(self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig):
+    def test_purity_score_range(
+        self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig
+    ):
         from tcrp.diagnostics.concept_purity import concept_purity_score
+
         segs = torch.randn(32, small_config.L)
         for k in range(small_config.K):
             result = concept_purity_score(adv_model, adv_model.base.scorer, segs, k)
-            assert -1.0 <= result["cosine_sim"] <= 1.0, \
-                f"cosine_sim out of range for concept {k}"
+            assert (
+                -1.0 <= result["cosine_sim"] <= 1.0
+            ), f"cosine_sim out of range for concept {k}"
             assert "concept" in result
             assert "pure" in result
             assert "warning" in result
 
-    def test_purity_report_all_concepts(self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig):
+    def test_purity_report_all_concepts(
+        self, adv_model: AdversarialTCRPForecaster, small_config: TCRPConfig
+    ):
         from tcrp.diagnostics.concept_purity import concept_purity_report
+
         segs = torch.randn(32, small_config.L)
         report = concept_purity_report(adv_model, adv_model.base.scorer, segs, segs)
         assert len(report) == small_config.K
@@ -360,12 +413,16 @@ class TestConceptPurityScore:
             assert "cosine_train" in vals
             assert "cosine_val" in vals
             assert "purity_gap" in vals
-            assert abs(vals["purity_gap"] - (vals["cosine_train"] - vals["cosine_val"])) < 1e-6
+            assert (
+                abs(vals["purity_gap"] - (vals["cosine_train"] - vals["cosine_val"]))
+                < 1e-6
+            )
 
 
 # ---------------------------------------------------------------------------
 # T*-05 Purity improves with adversarial training (synthetic data)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.slow
 def test_purity_improves_with_adversarial():
@@ -376,18 +433,29 @@ def test_purity_improves_with_adversarial():
 
     This is a longer test (uses a tiny model + few epochs) to keep CI fast.
     """
+    from torch.utils.data import DataLoader, TensorDataset
+
     from tcrp.diagnostics.concept_purity import concept_purity_score
     from tcrp.training.adversarial_trainer import AdversarialTrainer
     from tcrp.training.trainer import Trainer
-    from torch.utils.data import DataLoader, TensorDataset
 
     torch.manual_seed(0)
 
     # Tiny config
     cfg = TCRPConfig(
-        T=80, H=8, L=8, stride=4, d=16, k_max=1, periods=[24],
-        lambda1=0.3, lambda2=1e-4, lambda3=0.01,
-        adversarial=True, alpha_max=1.0, warmup_epochs=3,
+        T=80,
+        H=8,
+        L=8,
+        stride=4,
+        d=16,
+        k_max=1,
+        periods=[24],
+        lambda1=0.3,
+        lambda2=1e-4,
+        lambda3=0.01,
+        adversarial=True,
+        alpha_max=1.0,
+        warmup_epochs=3,
     )
     T, H, B = cfg.T, cfg.H, 64
 
@@ -396,13 +464,13 @@ def test_purity_improves_with_adversarial():
     # Introduce spurious pattern: high-frequency noise correlated with target on training set
     x_train = x[:48] + 0.3 * torch.sin(torch.linspace(0, 40 * math.pi, T)).unsqueeze(0)
     y_train = x_train[:, -H:].clone()
-    x_val   = x[48:]
-    y_val   = x_val[:, -H:].clone()
+    x_val = x[48:]
+    y_val = x_val[:, -H:].clone()
 
     train_ds = TensorDataset(x_train, y_train)
-    val_ds   = TensorDataset(x_val,   y_val)
+    val_ds = TensorDataset(x_val, y_val)
     train_dl = DataLoader(train_ds, batch_size=16, shuffle=True)
-    val_dl   = DataLoader(val_ds,   batch_size=16)
+    val_dl = DataLoader(val_ds, batch_size=16)
 
     # --- Standard model ---
     torch.manual_seed(1)
@@ -411,7 +479,7 @@ def test_purity_improves_with_adversarial():
 
     # --- Adversarial model ---
     torch.manual_seed(1)
-    base     = TCRPForecaster(cfg)
+    base = TCRPForecaster(cfg)
     model_adv = AdversarialTCRPForecaster(base, alpha=0.0)
     AdversarialTrainer(model_adv, cfg).fit(train_dl, val_dl, max_epochs=15)
 
@@ -425,7 +493,9 @@ def test_purity_improves_with_adversarial():
     # Use a fresh wrapper around the standard model just for the purity call
     model_std_wrapped = AdversarialTCRPForecaster(model_std, alpha=0.0)
     purity_adv = [
-        concept_purity_score(model_std_wrapped, model_std_wrapped.base.scorer, segs, k)["cosine_sim"]
+        concept_purity_score(model_std_wrapped, model_std_wrapped.base.scorer, segs, k)[
+            "cosine_sim"
+        ]
         for k in range(cfg.K)
     ]
 
@@ -433,21 +503,24 @@ def test_purity_improves_with_adversarial():
     mean_adv = sum(purity_adv) / len(purity_adv)
 
     # Adversarial purity should be higher on average (allow small margin for noisy training)
-    assert mean_adv >= mean_std - 0.05, \
-        f"Adversarial purity ({mean_adv:.4f}) should be >= standard ({mean_std:.4f})"
+    assert (
+        mean_adv >= mean_std - 0.05
+    ), f"Adversarial purity ({mean_adv:.4f}) should be >= standard ({mean_std:.4f})"
 
 
 # ---------------------------------------------------------------------------
 # T*-04/alpha integration test
 # ---------------------------------------------------------------------------
 
+
 def test_alpha_schedule_integration(small_config: TCRPConfig):
     """
     Full training loop with adversarial trainer on tiny synthetic dataset.
     Assert alpha increases monotonically after warmup; loss is finite at all epochs.
     """
-    from tcrp.training.adversarial_trainer import AdversarialTrainer
     from torch.utils.data import DataLoader, TensorDataset
+
+    from tcrp.training.adversarial_trainer import AdversarialTrainer
 
     torch.manual_seed(42)
     T, H = small_config.T, small_config.H
@@ -465,17 +538,20 @@ def test_alpha_schedule_integration(small_config: TCRPConfig):
 
     for epoch in range(1, max_epochs + 1):
         alpha = grl_alpha_schedule(
-            epoch - 1, max_epochs,
+            epoch - 1,
+            max_epochs,
             warmup_epochs=small_config.warmup_epochs,
             alpha_max=small_config.alpha_max,
         )
         model.set_alpha(alpha)
         alphas.append(alpha)
         bundle = trainer.train_epoch(dl)
-        assert math.isfinite(bundle.total_loss.item()), \
-            f"Loss diverged at epoch {epoch}: {bundle.total_loss.item()}"
+        assert math.isfinite(
+            bundle.total_loss.item()
+        ), f"Loss diverged at epoch {epoch}: {bundle.total_loss.item()}"
 
-    post_warmup = alphas[small_config.warmup_epochs:]
+    post_warmup = alphas[small_config.warmup_epochs :]
     if len(post_warmup) > 1:
-        assert all(post_warmup[i] <= post_warmup[i + 1] for i in range(len(post_warmup) - 1)), \
-            "alpha must be non-decreasing after warmup"
+        assert all(
+            post_warmup[i] <= post_warmup[i + 1] for i in range(len(post_warmup) - 1)
+        ), "alpha must be non-decreasing after warmup"

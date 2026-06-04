@@ -1,0 +1,58 @@
+models:
+  L: 20
+  stride: 5
+  periods:
+    - 24
+    - 168
+  k_max: 2
+  alpha: 5.0
+  beta: 5.0
+  gamma: 0.5
+  gamma_j: 2.0
+  jump_threshold: 3.0
+  train_std: 1.0
+  lambda1: 0.1
+  lambda2: 0.0001
+  lambda3: 0.01
+  probabilistic: false
+  adversarial: false
+  alpha_max: 1.0
+  warmup_epochs: 20
+  encoder_in_ch: 1
+  encoder_hidden: 64
+  tcn_encoder_n_layers: 4
+  tcn_encoder_kernel_size: 3
+  tcn_encoder_use_weight_norm: true
+  lstm_encoder_bidirectional: false
+  lstm_encoder_dropout: 0.0
+  lstm_encoder_pooling: last
+  attention_hidden: 32
+  attention_temp: 1.0
+datasets:
+  dataset: ETTh1
+  data_root: tcrp/data/raw
+  univariate: true
+  target_col: OT
+  periods:
+    - 24
+    - 168
+trainers:
+  lr: 0.001
+  batch_size: 32
+  max_epochs: 100
+  early_stopping_patience: 10
+  lr_patience: 5
+  lr_factor: 0.5
+  grad_clip: 1.0
+  num_workers: 0
+  seed: 42
+T: 336
+H: 96
+model_type: nbeats
+include_gbm: false
+checkpoint_dir: checkpoints
+run_name: ''
+seed: 42
+experiment: etth1_baseline
+baseline_hidden: 256
+baseline_layers: 3

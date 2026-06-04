@@ -1,0 +1,4 @@
+- +experiment=etth1_baseline
+- ++model_type=nbeats
+- +models.baseline_hidden=256
+- +models.baseline_layers=3

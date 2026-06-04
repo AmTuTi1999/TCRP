@@ -1,8 +1,0 @@
-# @package _global_
-# Overrides train.yaml for ettm2_H720
-defaults:
-  - override /datasets: ettm2
-
-T:      720
-H:      720
-run_name: ettm2_H720

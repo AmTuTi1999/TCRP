@@ -3,9 +3,9 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
-      - id: trailing-whitespace        # removes trailing spaces
-      - id: end-of-file-fixer          # ensures files end with a newline
-      - id: mixed-line-ending          # normalises CRLF → LF
+      - id: trailing-whitespace # removes trailing spaces
+      - id: end-of-file-fixer # ensures files end with a newline
+      - id: mixed-line-ending # normalises CRLF → LF
         args: [--fix=lf]
       - id: check-yaml
       - id: check-toml
@@ -14,7 +14,7 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=1000]
       - id: detect-private-key
-      - id: debug-statements           # flags leftover print/breakpoint calls
+      - id: debug-statements # flags leftover print/breakpoint calls
 
   # ── Python: Black (opinionated formatter) ────────────────────────────────
   - repo: https://github.com/psf/black
@@ -28,18 +28,9 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.4.9
     hooks:
-      - id: ruff                       # lint
+      - id: ruff # lint
         args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format                # ruff's own formatter (optional alongside Black)
-
-  # ── Python: pycodestyle (PEP 8 whitespace / line-length / spacing) ───────
-  - repo: https://github.com/PyCQA/pycodestyle
-    rev: 2.11.1
-    hooks:
-      - id: pycodestyle
-        args:
-          - --max-line-length=88
-          - --ignore=E203,W503          # black-compatible ignores
+      - id: ruff-format # ruff's own formatter (optional alongside Black)
 
   # ── Python: pydocstyle (docstring typesetting / formatting) ──────────────
   - repo: https://github.com/PyCQA/pydocstyle

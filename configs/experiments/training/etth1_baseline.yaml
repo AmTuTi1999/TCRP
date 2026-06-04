@@ -2,16 +2,13 @@
 # Overrides train.yaml for etth1_H96
 defaults:
   - override /datasets: etth1
+  - override /models: lstm
+  - override /trainers: baseline_trainer
 
-T:      336
-H:      96
-run_name: etth1_H96
+T: 336
+H: 96
+run_name: etth1_baseline
 models:
-  L:      30
+  L: 30
   stride: 1
 include_gbm: true
-
-
-####
-baseline_hidden: 256
-baseline_layers: 3

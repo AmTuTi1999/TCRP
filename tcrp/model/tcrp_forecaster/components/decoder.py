@@ -1,12 +1,11 @@
-"""
-Phase 6 · Horizon Decoder
+"""Phase 6 · Horizon Decoder.
 
 Implements linear horizon decoder and Gaussian probabilistic decoder.
 """
-from abc import ABC, abstractmethod
-from typing import Tuple, Union
 
 import math
+from abc import ABC, abstractmethod
+
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -19,7 +18,7 @@ class BaseDecoder(nn.Module, ABC):
     """
 
     @abstractmethod
-    def forward(self, h: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
+    def forward(self, h: Tensor) -> Tensor | tuple[Tensor, Tensor]:
         """Map pooled concepts (B, K) → forecast (B, H) or (mu, sigma)."""
 
 
@@ -27,6 +26,7 @@ class HorizonDecoder(BaseDecoder):
     """Linear horizon decoder: y_hat = Theta @ h (no non-linearity)."""
 
     def __init__(self, K: int, H: int):
+        """Initialize HorizonDecoder with concept dim K and forecast horizon H."""
         super().__init__()
         self.K = K
         self.H = H
@@ -36,6 +36,7 @@ class HorizonDecoder(BaseDecoder):
         self.Theta = self.linear.weight
 
     def forward(self, h: Tensor) -> Tensor:
+        """Map pooled concept vector (B, K) to forecast (B, H)."""
         if h.dim() != 2:
             raise ValueError(f"Expected h shape (B, K), got {tuple(h.shape)}")
         if h.shape[1] != self.K:
@@ -47,6 +48,7 @@ class GaussianDecoder(BaseDecoder):
     """Probabilistic Gaussian decoder with mu and log-sigma heads."""
 
     def __init__(self, K: int, H: int):
+        """Initialize GaussianDecoder with concept dim K and forecast horizon H."""
         super().__init__()
         self.K = K
         self.H = H
@@ -56,7 +58,8 @@ class GaussianDecoder(BaseDecoder):
         # Expose mu_head weights for analysis
         self.Theta = self.mu_head.weight
 
-    def forward(self, h: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, h: Tensor) -> tuple[Tensor, Tensor]:
+        """Map pooled concept vector (B, K) to (mu, sigma) forecast distributions."""
         if h.dim() != 2:
             raise ValueError(f"Expected h shape (B, K), got {tuple(h.shape)}")
         if h.shape[1] != self.K:

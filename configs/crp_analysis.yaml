@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - models: tcrp
+  - datasets: etth1
+  - trainers: tcrp_trainer
+  - _self_
+
+T: 336
+H: 96
+model_type: tcrp
+include_gbm: false
+checkpoint_dir: 'checkpoints/ETTh1_tcrp_T336_H96_best.pt'
+run_name: ''
+seed: 42
+
+h_star: 0
+n_samples: 32

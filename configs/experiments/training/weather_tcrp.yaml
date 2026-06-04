@@ -3,6 +3,6 @@
 defaults:
   - override /datasets: weather
 
-T:      336
-H:      96
+T: 336
+H: 96
 run_name: weather_H96

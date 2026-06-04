@@ -1,5 +1,5 @@
-"""
-T-04 · Full Temporal Concept Vector
+"""T-04 · Full Temporal Concept Vector.
+
 Paper: Eq. 26, Table 2
 
 Combines all Phase-1 analytic concept scores into a single differentiable vector.
@@ -19,25 +19,22 @@ Canonical column order (K = 16 + k_max + len(periods)):
 Default K = 16 + 2 + 4 = 22  (k_max=2, periods=[2,4,8,16]).
 """
 
-from typing import List
 import torch
 import torch.nn as nn
 from torch import Tensor
 
-
-from .monotonicity import soft_monotonicity
+from .autocorrelation import autocorrelation_scores
 from .curvature import soft_curvature
+from .distribution_shape import shape_scores
+from .monotonicity import soft_monotonicity
 from .periodicity import periodicity_score
 from .stochastic import gbm_scores
-from .volatility import volatility_scores
-from .autocorrelation import autocorrelation_scores
 from .structural_breaks import break_scores
-from .distribution_shape import shape_scores
+from .volatility import volatility_scores
 
 
 class ConceptScorer(nn.Module):
-    """
-    Computes the full temporal concept vector for time series segments.
+    """Computes the full temporal concept vector for time series segments.
 
     No learned parameters — all computations are fully differentiable
     w.r.t. the input.
@@ -58,13 +55,14 @@ class ConceptScorer(nn.Module):
         self,
         alpha: float = 5.0,
         beta: float = 5.0,
-        periods: List[int] = None,
+        periods: list[int] = None,
         gamma: float = 0.5,
         gamma_j: float = 2.0,
         k_max: int = 2,
         jump_threshold: float = 3.0,
         train_std: float = 1.0,
     ):
+        """Initialize ConceptScorer with scoring hyperparameters."""
         super().__init__()
         self.alpha = alpha
         self.beta = beta
@@ -76,32 +74,34 @@ class ConceptScorer(nn.Module):
         self.train_std = train_std
         self.num_concepts = 16 + k_max + len(self.periods)
 
-
     @property
-    def concept_names(self) -> List[str]:
+    def concept_names(self) -> list[str]:
         """Return label for each column of the concept vector, in output order."""
         k = self.k_max
-        names: List[str] = [
-            "mu_signed", "mu_mag",           # T-01 trend
-            "kappa_signed", "tau",            # T-02 curvature
-            "xi",                             # stochasticity
-            "sigma_tilde", "mu_v", "psi",    # T-03c volatility
+        names: list[str] = [
+            "mu_signed",
+            "mu_mag",  # T-01 trend
+            "kappa_signed",
+            "tau",  # T-02 curvature
+            "xi",  # stochasticity
+            "sigma_tilde",
+            "mu_v",
+            "psi",  # T-03c volatility
         ]
         for lag in range(1, k + 1):
-            names.append(f"rho_{lag}")        # T-03d increment ACF
-        names += ["theta_hat", "z"]           # T-03d mean reversion / z-score
-        names += ["b_mu", "b_sigma", "b_mu_tilde"]   # T-03e breaks
-        names += ["varsigma", "kappa4", "j"] # T-03f shape
+            names.append(f"rho_{lag}")  # T-03d increment ACF
+        names += ["theta_hat", "z"]  # T-03d mean reversion / z-score
+        names += ["b_mu", "b_sigma", "b_mu_tilde"]  # T-03e breaks
+        names += ["varsigma", "kappa4", "j"]  # T-03f shape
         for p in self.periods:
-            names.append(f"rho_p{p}")         # T-03 periodicity
-        assert len(names) == self.num_concepts, (
-            f"concept_names length {len(names)} != num_concepts {self.num_concepts}"
-        )
+            names.append(f"rho_p{p}")  # T-03 periodicity
+        assert (
+            len(names) == self.num_concepts
+        ), f"concept_names length {len(names)} != num_concepts {self.num_concepts}"
         return names
 
     def forward(self, s: Tensor) -> Tensor:
-        """
-        Compute full temporal concept vector for a batch of segments.
+        """Compute full temporal concept vector for a batch of segments.
 
         Args:
             s: Input of shape (B, L).
@@ -120,7 +120,7 @@ class ConceptScorer(nn.Module):
 
         # xi: stochasticity — GBM volatility estimate with gamma as sensitivity scale
         stoch = gbm_scores(s, vol_scale=self.gamma)
-        xi = stoch.gbm_vol                                   # (B,)
+        xi = stoch.gbm_vol  # (B,)
 
         # T-03c: Volatility
         vol = volatility_scores(s, train_std=self.train_std, alpha=self.alpha)
@@ -139,7 +139,7 @@ class ConceptScorer(nn.Module):
 
         # Assemble in canonical order
         parts = [
-            mono.mu_signed.unsqueeze(1),        # (B,1)
+            mono.mu_signed.unsqueeze(1),  # (B,1)
             mono.mu_mag.unsqueeze(1),
             curv.kappa_signed.unsqueeze(1),
             curv.tau.unsqueeze(1),
@@ -147,7 +147,7 @@ class ConceptScorer(nn.Module):
             vol["sigma_tilde"].unsqueeze(1),
             vol["mu_v"].unsqueeze(1),
             vol["psi"].unsqueeze(1),
-            acf["rho"],                          # (B, k_max)
+            acf["rho"],  # (B, k_max)
             acf["theta_hat"].unsqueeze(1),
             acf["z"].unsqueeze(1),
             brk["b_mu"].unsqueeze(1),
@@ -156,6 +156,6 @@ class ConceptScorer(nn.Module):
             shp["varsigma"].unsqueeze(1),
             shp["kappa4"].unsqueeze(1),
             shp["j"].unsqueeze(1),
-            rho_p,                               # (B, M)
+            rho_p,  # (B, M)
         ]
-        return torch.cat(parts, dim=1)           # (B, K)
+        return torch.cat(parts, dim=1)  # (B, K)

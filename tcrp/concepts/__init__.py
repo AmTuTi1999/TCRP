@@ -1,5 +1,5 @@
-"""
-Phase 1: Analytic Concept Scores
+"""Phase 1: Analytic Concept Scores.
+
 Pure functions and modules for computing differentiable temporal concepts.
 
 Exports:
@@ -13,15 +13,15 @@ Exports:
   - AutocorrelationScores: TypedDict for autocorrelation outputs
 """
 
-from .monotonicity import soft_monotonicity, MonotonicityScores
-from .curvature import soft_curvature, CurvatureScores
-from .periodicity import periodicity_score
+from .autocorrelation import AutocorrelationScores, autocorrelation_scores
 from .concept_vector import ConceptScorer
-from .stochastic import gbm_scores, GBMScores
-from .autocorrelation import autocorrelation_scores, AutocorrelationScores
-from .volatility import volatility_scores, VolatilityScores
-from .distribution_shape import shape_scores, ShapeScores
-from .structural_breaks import break_scores, BreakScores
+from .curvature import CurvatureScores, soft_curvature
+from .distribution_shape import ShapeScores, shape_scores
+from .monotonicity import MonotonicityScores, soft_monotonicity
+from .periodicity import periodicity_score
+from .stochastic import GBMScores, gbm_scores
+from .structural_breaks import BreakScores, break_scores
+from .volatility import VolatilityScores, volatility_scores
 
 __all__ = [
     "soft_monotonicity",

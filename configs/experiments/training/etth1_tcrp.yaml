@@ -1,12 +1,12 @@
 # @package _global_
-# Overrides train.yaml for etth1_H192
+# Overrides train.yaml for etth1_H96
 defaults:
   - override /datasets: etth1
 
-T:      336
-H:      192
-run_name: etth1_H192
+T: 336
+H: 96
+run_name: etth1_H96
 models:
-  L:      30
+  L: 30
   stride: 1
 include_gbm: true

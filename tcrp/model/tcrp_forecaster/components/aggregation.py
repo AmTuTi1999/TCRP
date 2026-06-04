@@ -1,9 +1,7 @@
-"""
-Phase 5 · Temporal Concept Aggregation
+"""Phase 5 · Temporal Concept Aggregation.
 
 Implements additive attention pooling per Eq.10.
 """
-from typing import Tuple, Optional
 
 import torch
 import torch.nn as nn
@@ -21,6 +19,7 @@ class ConceptAttentionPool(nn.Module):
     """
 
     def __init__(self, K: int, hidden: int = 32, temp: float = 1.0):
+        """Initialize ConceptAttentionPool with concept dimension, hidden size, and temperature."""
         super().__init__()
         self.K = K
         self.hidden = hidden
@@ -32,10 +31,9 @@ class ConceptAttentionPool(nn.Module):
         self.v = nn.Parameter(torch.randn(hidden))
 
         # last attention weights for analysis
-        self.last_eta: Optional[Tensor] = None
+        self.last_eta: Tensor | None = None
 
-
-    def forward(self, A: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, A: Tensor) -> tuple[Tensor, Tensor]:
         """Forward pass.
 
         Args:

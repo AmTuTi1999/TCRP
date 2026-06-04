@@ -1,27 +1,29 @@
-"""
-TCRP Forecaster Assembly
+"""TCRP Forecaster Assembly.
 
 Assembles segmentation, encoding, concept projection, scoring, attention, and decoding.
 """
+
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
 from torch import Tensor
 
-from .components.segmentation import Segmenter
-from .components.encoder import TCNEncoder
-from .components.bottleneck import ConceptProjection
-from .components.aggregation import ConceptAttentionPool
-from .components.decoder import HorizonDecoder, GaussianDecoder
 from tcrp.concepts import ConceptScorer
-from ..utils.types import TCRPOutput, TCRPConfig
+
+from ..utils.types import TCRPConfig, TCRPOutput
+from .components.aggregation import ConceptAttentionPool
+from .components.bottleneck import ConceptProjection
+from .components.decoder import GaussianDecoder, HorizonDecoder
+from .components.encoder import TCNEncoder
+from .components.segmentation import Segmenter
 
 
 class TCRPForecaster(nn.Module):
     """TCRP forecaster combining all TCRP components."""
 
     def __init__(self, config: TCRPConfig):
+        """Initialize TCRPForecaster with the given configuration."""
         super().__init__()
         self.config = config
 
@@ -44,8 +46,14 @@ class TCRPForecaster(nn.Module):
             jump_threshold=config.jump_threshold,
             train_std=config.train_std,
         )
-        self.pool = ConceptAttentionPool(K=config.K, hidden=config.attention_hidden, temp=config.attention_temp)
-        self.decoder = GaussianDecoder(config.K, config.H) if config.probabilistic else HorizonDecoder(config.K, config.H)
+        self.pool = ConceptAttentionPool(
+            K=config.K, hidden=config.attention_hidden, temp=config.attention_temp
+        )
+        self.decoder = (
+            GaussianDecoder(config.K, config.H)
+            if config.probabilistic
+            else HorizonDecoder(config.K, config.H)
+        )
 
     def forward(self, x: Tensor) -> TCRPOutput:
         """Forward pass through the full TCRP model.
@@ -60,9 +68,9 @@ class TCRPForecaster(nn.Module):
             raise ValueError(f"Expected input shape (B, T), got {tuple(x.shape)}")
 
         B, _ = x.shape
-        segments = self.segmenter(x) # segments: (B, N, L)
-        Z = self.encoder(segments) # Z: (B, N, d)
-        A = self.projection(Z) # A: (B, N, K)
+        segments = self.segmenter(x)  # segments: (B, N, L)
+        Z = self.encoder(segments)  # Z: (B, N, d)
+        A = self.projection(Z)  # A: (B, N, K)
 
         with torch.no_grad():
             flat_segments = segments.reshape(-1, segments.shape[-1])

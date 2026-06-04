@@ -3,8 +3,8 @@
 defaults:
   - override /datasets: exchange_rate
 
-T:      336
-H:      96
+T: 336
+H: 96
 run_name: exchange_rate_H96
 models:
   lambda1: 0.05

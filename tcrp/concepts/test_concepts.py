@@ -9,20 +9,21 @@ T-04  · Full Concept Vector  — ConceptScorer, K=22, gradcheck
 """
 
 import math
+
 import torch
 from torch import Tensor
 from torch.autograd import gradcheck
 
-from tcrp.concepts.concept_vector import ConceptScorer
-from tcrp.concepts.volatility import volatility_scores
 from tcrp.concepts.autocorrelation import autocorrelation_scores
-from tcrp.concepts.structural_breaks import break_scores
+from tcrp.concepts.concept_vector import ConceptScorer
 from tcrp.concepts.distribution_shape import shape_scores
-
+from tcrp.concepts.structural_breaks import break_scores
+from tcrp.concepts.volatility import volatility_scores
 
 # ===========================================================================
 # Shared helpers
 # ===========================================================================
+
 
 def _series_from_deltas(deltas: Tensor) -> Tensor:
     return torch.cat([torch.zeros(1), deltas.cumsum(0)])
@@ -45,14 +46,20 @@ def _ar1_increments(n: int, phi: float, seed: int = 0) -> Tensor:
     delta = torch.zeros(n - 1)
     delta[0] = torch.randn(1).item()
     for t in range(1, n - 1):
-        delta[t] = phi * delta[t - 1] + torch.randn(1).item() * math.sqrt(1 - phi ** 2)
+        delta[t] = phi * delta[t - 1] + torch.randn(1).item() * math.sqrt(1 - phi**2)
     s = torch.zeros(n)
     s[1:] = delta.cumsum(0)
     return s
 
 
-def _ou_path(n: int, theta: float, mu: float = 0.0, sigma: float = 1.0,
-             dt: float = 0.01, seed: int = 0) -> Tensor:
+def _ou_path(
+    n: int,
+    theta: float,
+    mu: float = 0.0,
+    sigma: float = 1.0,
+    dt: float = 0.01,
+    seed: int = 0,
+) -> Tensor:
     torch.manual_seed(seed)
     x = torch.zeros(n)
     for t in range(1, n):
@@ -61,15 +68,16 @@ def _ou_path(n: int, theta: float, mu: float = 0.0, sigma: float = 1.0,
     return x
 
 
-def _garch_path(n: int, omega: float = 0.1, alpha_g: float = 0.3,
-                beta_g: float = 0.6, seed: int = 0) -> Tensor:
+def _garch_path(
+    n: int, omega: float = 0.1, alpha_g: float = 0.3, beta_g: float = 0.6, seed: int = 0
+) -> Tensor:
     torch.manual_seed(seed)
     x = torch.zeros(n)
     h = omega / (1 - alpha_g - beta_g + 1e-6)
     for t in range(1, n):
         eps = math.sqrt(h) * torch.randn(1).item()
         x[t] = x[t - 1] + eps
-        h = omega + alpha_g * eps ** 2 + beta_g * h
+        h = omega + alpha_g * eps**2 + beta_g * h
     return x
 
 
@@ -87,8 +95,9 @@ def _positively_clustered_d2(n: int, seed: int = 0) -> Tensor:
     return s
 
 
-def _vol_break_series(n: int, low_std: float = 0.1, high_std: float = 2.0,
-                      seed: int = 0) -> Tensor:
+def _vol_break_series(
+    n: int, low_std: float = 0.1, high_std: float = 2.0, seed: int = 0
+) -> Tensor:
     torch.manual_seed(seed)
     mid = n // 2
     s1 = (torch.randn(mid) * low_std).cumsum(0)
@@ -98,15 +107,16 @@ def _vol_break_series(n: int, low_std: float = 0.1, high_std: float = 2.0,
 
 def _step_series_clean(n: int, shift: float = 5.0) -> Tensor:
     s = torch.zeros(n)
-    s[n // 2:] = shift
+    s[n // 2 :] = shift
     return s
 
 
 def _reversal_series(n: int) -> Tensor:
     """Amplitude of 50 gives step ~1.0 so soft_monotonicity registers clear ±1."""
     mid = n // 2
-    return torch.cat([torch.linspace(0.0, 50.0, mid),
-                      torch.linspace(50.0, 0.0, n - mid)])
+    return torch.cat(
+        [torch.linspace(0.0, 50.0, mid), torch.linspace(50.0, 0.0, n - mid)]
+    )
 
 
 def _linear_series(n: int, slope: float = 1.0) -> Tensor:
@@ -138,6 +148,7 @@ def _series_with_spike(n: int, spike_sigma: float = 5.0, seed: int = 0) -> Tenso
 # T-03c · Volatility
 # ===========================================================================
 
+
 def test_realvol_scale():
     """Doubling all increments doubles sigma_tilde."""
     torch.manual_seed(0)
@@ -145,8 +156,9 @@ def test_realvol_scale():
     delta = s[1:] - s[:-1]
     s2 = torch.zeros_like(s)
     s2[1:] = (2 * delta).cumsum(0)
-    ratio = (volatility_scores(s2, train_std=1.0)["sigma_tilde"].item() /
-             (volatility_scores(s, train_std=1.0)["sigma_tilde"].item() + 1e-12))
+    ratio = volatility_scores(s2, train_std=1.0)["sigma_tilde"].item() / (
+        volatility_scores(s, train_std=1.0)["sigma_tilde"].item() + 1e-12
+    )
     assert abs(ratio - 2.0) < 1e-4
 
 
@@ -154,8 +166,9 @@ def test_realvol_train_std_scaling():
     """Doubling train_std halves sigma_tilde."""
     torch.manual_seed(1)
     s = torch.randn(80).cumsum(0)
-    ratio = (volatility_scores(s, train_std=1.0)["sigma_tilde"].item() /
-             (volatility_scores(s, train_std=2.0)["sigma_tilde"].item() + 1e-12))
+    ratio = volatility_scores(s, train_std=1.0)["sigma_tilde"].item() / (
+        volatility_scores(s, train_std=2.0)["sigma_tilde"].item() + 1e-12
+    )
     assert abs(ratio - 2.0) < 1e-4
 
 
@@ -171,9 +184,12 @@ def test_realvol_batched_shape():
 
 def test_voltend_rising():
     """GARCH path → mu_v > 0 on average (volatility rising)."""
-    mu_vs = [volatility_scores(_garch_path(200, omega=0.05, alpha_g=0.4,
-                                           beta_g=0.55, seed=s))["mu_v"].item()
-             for s in range(100)]
+    mu_vs = [
+        volatility_scores(
+            _garch_path(200, omega=0.05, alpha_g=0.4, beta_g=0.55, seed=s)
+        )["mu_v"].item()
+        for s in range(100)
+    ]
     assert sum(mu_vs) / len(mu_vs) > 0.0
 
 
@@ -190,8 +206,10 @@ def test_voltend_constant_series():
 
 def test_arch_clustering():
     """Positively clustered squared increments → psi > 0.1 on average."""
-    psis = [volatility_scores(_positively_clustered_d2(200, seed=s))["psi"].item()
-            for s in range(50)]
+    psis = [
+        volatility_scores(_positively_clustered_d2(200, seed=s))["psi"].item()
+        for s in range(50)
+    ]
     assert sum(psis) / len(psis) > 0.1
 
 
@@ -212,7 +230,9 @@ def test_arch_range():
 
 
 def test_arch_degenerate():
-    assert abs(volatility_scores(torch.arange(50, dtype=torch.float))["psi"].item()) < 1e-6
+    assert (
+        abs(volatility_scores(torch.arange(50, dtype=torch.float))["psi"].item()) < 1e-6
+    )
 
 
 def test_vol_differentiable_sigma():
@@ -237,6 +257,7 @@ def test_vol_differentiable_psi():
 # T-03d · Autocorrelation
 # ===========================================================================
 
+
 def test_rho_iid():
     """Random walk (i.i.d. increments) → mean |rho_k| < 0.15.
 
@@ -247,8 +268,9 @@ def test_rho_iid():
     abs_rhos = []
     for seed in range(500):
         torch.manual_seed(seed)
-        abs_rhos.append(autocorrelation_scores(torch.randn(100).cumsum(0),
-                                               k_max=2)["rho"].abs())
+        abs_rhos.append(
+            autocorrelation_scores(torch.randn(100).cumsum(0), k_max=2)["rho"].abs()
+        )
     assert torch.stack(abs_rhos).mean(dim=0).lt(0.15).all()
 
 
@@ -258,9 +280,9 @@ def test_rho_momentum():
     AR(1) in the LEVEL space gives lag-1 increment ACF ≈ -(1-phi)/2 ≈ -0.1,
     not 0.8.  We need AR(1) in the INCREMENT space so that rho_1 = phi.
     """
-    rho_1 = autocorrelation_scores(
-        _ar1_increments(2000, phi=0.8, seed=42), k_max=2
-    )["rho"][0].item()
+    rho_1 = autocorrelation_scores(_ar1_increments(2000, phi=0.8, seed=42), k_max=2)[
+        "rho"
+    ][0].item()
     assert abs(rho_1 - 0.8) < 0.1
 
 
@@ -273,7 +295,9 @@ def test_rho_shape_batched():
 
 
 def test_rho_range():
-    assert (autocorrelation_scores(_ar1(200, phi=0.9), k_max=5)["rho"].abs() <= 1.0).all()
+    assert (
+        autocorrelation_scores(_ar1(200, phi=0.9), k_max=5)["rho"].abs() <= 1.0
+    ).all()
 
 
 def test_theta_ornstein_uhlenbeck():
@@ -334,13 +358,20 @@ def test_acf_exclude_z():
 
 
 def test_acf_all_excluded():
-    assert autocorrelation_scores(torch.randn(50),
-                                  include_rho=False, include_theta=False,
-                                  include_z=False) == {}
+    assert (
+        autocorrelation_scores(
+            torch.randn(50), include_rho=False, include_theta=False, include_z=False
+        )
+        == {}
+    )
 
 
 def test_acf_default_all_included():
-    assert set(autocorrelation_scores(torch.randn(50)).keys()) == {"rho", "theta_hat", "z"}
+    assert set(autocorrelation_scores(torch.randn(50)).keys()) == {
+        "rho",
+        "theta_hat",
+        "z",
+    }
 
 
 def test_acf_differentiable_rho():
@@ -364,6 +395,7 @@ def test_acf_differentiable_z():
 # ===========================================================================
 # T-03e · Structural Breaks
 # ===========================================================================
+
 
 def test_level_shift():
     """Clean step function → b_mu > 0.8."""
@@ -399,8 +431,10 @@ def test_level_batched_shape():
 
 def test_vol_break():
     """Low-vol / high-vol halves → mean b_sigma > 0.5."""
-    vals = [break_scores(_vol_break_series(100, seed=s))["b_sigma"].item()
-            for s in range(20)]
+    vals = [
+        break_scores(_vol_break_series(100, seed=s))["b_sigma"].item()
+        for s in range(20)
+    ]
     assert sum(vals) / len(vals) > 0.5
 
 
@@ -490,10 +524,13 @@ def test_breaks_gradcheck():
 # T-03f · Distributional Shape
 # ===========================================================================
 
+
 def test_skew_negative():
     """Right-clipped distribution → mean varsigma < 0."""
-    vals = [shape_scores(_right_clipped_series(300, seed=s))["varsigma"].item()
-            for s in range(100)]
+    vals = [
+        shape_scores(_right_clipped_series(300, seed=s))["varsigma"].item()
+        for s in range(100)
+    ]
     assert sum(vals) / len(vals) < 0.0
 
 
@@ -502,7 +539,9 @@ def test_skew_gaussian():
     abs_skews = []
     for seed in range(500):
         torch.manual_seed(seed)
-        abs_skews.append(abs(shape_scores(torch.randn(100).cumsum(0))["varsigma"].item()))
+        abs_skews.append(
+            abs(shape_scores(torch.randn(100).cumsum(0))["varsigma"].item())
+        )
     assert sum(abs_skews) / len(abs_skews) < 0.3
 
 
@@ -528,8 +567,9 @@ def test_kurtosis_gaussian():
 
 def test_kurtosis_cauchy():
     """Cauchy increments → mean kappa4 > 5 (near upper clamp)."""
-    kurts = [shape_scores(_cauchy_series(200, seed=s))["kappa4"].item()
-             for s in range(50)]
+    kurts = [
+        shape_scores(_cauchy_series(200, seed=s))["kappa4"].item() for s in range(50)
+    ]
     assert sum(kurts) / len(kurts) > 5.0
 
 
@@ -547,8 +587,11 @@ def test_kurtosis_batched_shape():
 def test_jump_detected():
     """5σ spike → j > 0.8."""
     for seed in range(20):
-        j = shape_scores(_series_with_spike(100, spike_sigma=5.0, seed=seed),
-                         gamma_j=2.0, jump_threshold=3.0)["j"].item()
+        j = shape_scores(
+            _series_with_spike(100, spike_sigma=5.0, seed=seed),
+            gamma_j=2.0,
+            jump_threshold=3.0,
+        )["j"].item()
         assert j > 0.8, f"seed={seed}: j={j:.4f}"
 
 
@@ -557,8 +600,9 @@ def test_jump_not_detected():
     js = []
     for seed in range(500):
         torch.manual_seed(seed)
-        js.append(shape_scores(torch.randn(30), gamma_j=2.0,
-                               jump_threshold=3.0)["j"].item())
+        js.append(
+            shape_scores(torch.randn(30), gamma_j=2.0, jump_threshold=3.0)["j"].item()
+        )
     assert sum(js) / len(js) < 0.3
 
 
@@ -696,5 +740,4 @@ def test_concept_scorer_gradcheck():
     scorer = ConceptScorer()
     torch.manual_seed(0)
     s = torch.randn(1, 40, dtype=torch.float64, requires_grad=True)
-    assert gradcheck(scorer, (s,), eps=1e-5, atol=1e-3, rtol=1e-2,
-                     raise_exception=True)
+    assert gradcheck(scorer, (s,), eps=1e-5, atol=1e-3, rtol=1e-2, raise_exception=True)

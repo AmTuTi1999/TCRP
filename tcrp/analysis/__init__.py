@@ -1,5 +1,6 @@
 """TCRP analysis utilities."""
-from .lrp import lrp_linear_eps, lrp_gamma_conv, lrp_mean_pool, lrp_relu
+
+from .lrp import lrp_gamma_conv, lrp_linear_eps, lrp_mean_pool, lrp_relu
 from .tcrp_analysis import TCRPAnalyser, TCRPExplanation, verify_conservation
 
 __all__ = [

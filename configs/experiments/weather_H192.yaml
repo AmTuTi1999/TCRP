@@ -1,8 +1,0 @@
-# @package _global_
-# Overrides train.yaml for weather_H192
-defaults:
-  - override /datasets: weather
-
-T:      336
-H:      192
-run_name: weather_H192

@@ -3,6 +3,6 @@
 defaults:
   - override /datasets: ettm2
 
-T:      336
-H:      96
+T: 336
+H: 96
 run_name: ettm2_H96

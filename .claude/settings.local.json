@@ -8,7 +8,44 @@
       "Bash(python -c ' *)",
       "Bash(python *)",
       "Bash(python3 *)",
-      "Bash(xargs grep -l \"stability_loss\")"
+      "Bash(xargs grep -l \"stability_loss\")",
+      "Bash(xargs -0 grep -h \"^import \\\\|^from \")",
+      "Bash(sed 's/[[:space:]].*//')",
+      "Bash(sed 's/\\\\..*//')",
+      "Bash(pip show *)",
+      "Bash(python -c \"import hydra; print\\('hydra', hydra.__version__\\)\")",
+      "Bash(python -c \"import omegaconf; print\\('omegaconf', omegaconf.__version__\\)\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(isort --version)",
+      "Bash(poetry run *)",
+      "Bash(pip install *)",
+      "Bash(jq --version)",
+      "Bash(cat /tmp/claude-hook-check.txt 2>/dev/null || echo \"file not created - hook did not fire\")",
+      "Read(//tmp/**)",
+      "Bash(rm -f /tmp/claude-hook-check.txt)",
+      "Bash(pre-commit install *)",
+      "Bash(pre-commit run *)",
+      "Bash(rm /workspaces/TCRP/.pre-commit-config.yaml && pre-commit install -c /workspaces/TCRP/pre-commit-config.yaml)",
+      "Bash(git commit -m ' *)"
+    ],
+    "additionalDirectories": [
+      "/tmp",
+      "/workspaces/TCRP"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // .tool_response.filePath'); case \"$f\" in *.py) /usr/local/bin/python -m isort \"$f\";; esac 2>/dev/null; true",
+            "statusMessage": "Running isort..."
+          }
+        ]
+      }
     ]
   }
 }

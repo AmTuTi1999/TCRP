@@ -1,5 +1,5 @@
-"""
-T-03d · Autocorrelation Concepts
+"""T-03d · Autocorrelation Concepts.
+
 Paper: Def. 6, Eqs. 17–19
 
 Computes differentiable autocorrelation-based descriptors for a time series segment:
@@ -11,14 +11,17 @@ All outputs are differentiable w.r.t. the input via standard Pearson / std ops.
 """
 
 from typing import TypedDict
+
 import torch
 from torch import Tensor
 
 
 class AutocorrelationScores(TypedDict, total=False):
-    rho: Tensor       # shape (k_max,), range (-1, 1)
-    theta_hat: Tensor # scalar, range [-2, 2]
-    z: Tensor         # scalar, range [-3, 3]
+    """TypedDict holding autocorrelation concept scores."""
+
+    rho: Tensor  # shape (k_max,), range (-1, 1)
+    theta_hat: Tensor  # scalar, range [-2, 2]
+    z: Tensor  # scalar, range [-3, 3]
 
 
 def _pearson_corr(x: Tensor, y: Tensor, eps: float = 1e-8) -> Tensor:
@@ -38,8 +41,7 @@ def autocorrelation_scores(
     include_z: bool = True,
     eps: float = 1e-8,
 ) -> AutocorrelationScores:
-    """
-    Compute autocorrelation-based concept scores for a time series segment.
+    """Compute autocorrelation-based concept scores for a time series segment.
 
     Args:
         s:             Input sequence, shape (L,) or (B, L).
@@ -70,10 +72,10 @@ def autocorrelation_scores(
         result["rho"] = rho if batched else rho.squeeze(0)
 
     if include_theta:
-        s_lag = s[:, :-1]       # OU process: delta_t = theta * s_{t-1} + noise
+        s_lag = s[:, :-1]  # OU process: delta_t = theta * s_{t-1} + noise
         corr_sd = _pearson_corr(s_lag, delta, eps=eps)  # (B,)
-        std_delta = delta.std(dim=-1, unbiased=False)    # (B,)
-        std_s_lag = s_lag.std(dim=-1, unbiased=False)    # (B,)
+        std_delta = delta.std(dim=-1, unbiased=False)  # (B,)
+        std_s_lag = s_lag.std(dim=-1, unbiased=False)  # (B,)
         theta_hat = -corr_sd * std_delta / (std_s_lag + eps)
         theta_hat = theta_hat.clamp(-2.0, 2.0)
         result["theta_hat"] = theta_hat if batched else theta_hat.squeeze(0)

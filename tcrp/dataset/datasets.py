@@ -1,5 +1,4 @@
-"""
-Phase 10 · Dataset loaders for time-series benchmarks.
+"""Phase 10 · Dataset loaders for time-series benchmarks.
 
 T-19: TimeSeriesDataset and get_loaders
 
@@ -7,16 +6,15 @@ Supported datasets: ETTh1, ETTm2, Weather, ExchangeRate, GEFCOM2014
 Split convention: train 60% / val 20% / test 20% (TimesNet convention).
 Normalisation statistics are always fit on the training portion only.
 """
+
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
-
+from torch.utils.data import DataLoader, Dataset
 
 # Per-dataset metadata: CSVfilename, target column for univariate mode,
 # and the name of any date/timestamp column to drop.
@@ -52,8 +50,8 @@ DATASET_META: dict = {
 # Fractional boundaries for each split.
 _SPLIT_BOUNDS = {
     "train": (0.0, 0.6),
-    "val":   (0.6, 0.8),
-    "test":  (0.8, 1.0),
+    "val": (0.6, 0.8),
+    "test": (0.8, 1.0),
 }
 
 
@@ -85,9 +83,10 @@ class TimeSeriesDataset(Dataset):
         T: int,
         H: int,
         normalise: bool = True,
-        target_col: Optional[str] = None,
+        target_col: str | None = None,
         univariate: bool = True,
     ) -> None:
+        """Initialize TimeSeriesDataset for the specified split."""
         if split not in _SPLIT_BOUNDS:
             raise ValueError(
                 f"split must be one of {list(_SPLIT_BOUNDS)}, got '{split}'"
@@ -103,7 +102,8 @@ class TimeSeriesDataset(Dataset):
 
         # Drop timestamp columns (date/time) by name or dtype.
         date_like_cols = [
-            c for c in df.columns
+            c
+            for c in df.columns
             if c.lower() in ("date", "datetime", "timestamp", "time")
         ]
         df = df.drop(columns=date_like_cols, errors="ignore")
@@ -119,20 +119,20 @@ class TimeSeriesDataset(Dataset):
 
         # ── Split boundaries ────────────────────────────────────────────────
         train_end = int(N * 0.6)
-        val_end   = int(N * 0.8)
+        val_end = int(N * 0.8)
 
         split_slices = {
-            "train": slice(0,         train_end),
-            "val":   slice(train_end, val_end),
-            "test":  slice(val_end,   N),
+            "train": slice(0, train_end),
+            "val": slice(train_end, val_end),
+            "test": slice(val_end, N),
         }
 
         train_data = data[split_slices["train"]]
 
         # ── Normalisation statistics (train only) ───────────────────────────
-        self.mean = train_data.mean(axis=0)               # (V,)
-        self.std  = train_data.std(axis=0)                # (V,)
-        self.std  = np.where(self.std == 0.0, 1.0, self.std)
+        self.mean = train_data.mean(axis=0)  # (V,)
+        self.std = train_data.std(axis=0)  # (V,)
+        self.std = np.where(self.std == 0.0, 1.0, self.std)
 
         split_data = data[split_slices[split]].copy()
 
@@ -154,7 +154,7 @@ class TimeSeriesDataset(Dataset):
             # Narrow statistics to match the single output channel so that
             # inverse_transform(y_hat, mean, std) broadcasts correctly against (B, H).
             self.mean = self.mean[col_idx : col_idx + 1]
-            self.std  = self.std[col_idx : col_idx + 1]
+            self.std = self.std[col_idx : col_idx + 1]
 
         self.data = split_data  # (M, 1) univariate | (M, V) multivariate
 
@@ -171,10 +171,12 @@ class TimeSeriesDataset(Dataset):
     # ── Dataset protocol ────────────────────────────────────────────────────
 
     def __len__(self) -> int:
+        """Return the number of sliding-window samples."""
         return self.n_samples
 
     def __getitem__(self, idx: int):
-        x = self.data[idx       : idx + self.T]
+        """Return (x, y) tensors for the sample at index idx."""
+        x = self.data[idx : idx + self.T]
         y = self.data[idx + self.T : idx + self.T + self.H]
 
         x_t = torch.from_numpy(x)
@@ -216,8 +218,7 @@ def get_loaders(
     """
     if dataset_name not in DATASET_META:
         raise ValueError(
-            f"Unknown dataset '{dataset_name}'. "
-            f"Supported: {list(DATASET_META)}"
+            f"Unknown dataset '{dataset_name}'. " f"Supported: {list(DATASET_META)}"
         )
 
     meta = DATASET_META[dataset_name]
@@ -236,8 +237,8 @@ def get_loaders(
         )
 
     train_ds = _make("train")
-    val_ds   = _make("val")
-    test_ds  = _make("test")
+    val_ds = _make("val")
+    test_ds = _make("test")
 
     return {
         "train": DataLoader(
@@ -264,5 +265,5 @@ def get_loaders(
         ),
         # Expose train-split statistics for inverse_transform.
         "mean": train_ds.mean,
-        "std":  train_ds.std,
+        "std": train_ds.std,
     }

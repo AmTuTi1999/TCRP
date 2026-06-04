@@ -1,36 +1,37 @@
-"""
-Phase T* · Adversarial Concept Purity — GRL components and adversarial wrapper.
-"""
+"""Phase T* · Adversarial Concept Purity — GRL components and adversarial wrapper."""
+
 from __future__ import annotations
 
 import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import Tensor
 
 from tcrp.model.tcrp_forecaster.forecaster import TCRPForecaster, TCRPOutput
-
 
 # ---------------------------------------------------------------------------
 # T*-01  Gradient Reversal Layer
 # ---------------------------------------------------------------------------
 
+
 class GradientReversal(torch.autograd.Function):
+    """Custom autograd function that reverses gradients by a scalar alpha factor."""
+
     @staticmethod
     def forward(ctx, x: Tensor, alpha: float) -> Tensor:
+        """Pass input through unchanged and store alpha for the backward pass."""
         ctx.alpha = alpha
         return x.clone()
 
     @staticmethod
     def backward(ctx, grad_output: Tensor):
+        """Return negated gradient scaled by alpha, with None for the alpha argument."""
         return -ctx.alpha * grad_output, None
 
 
 class GRLLayer(nn.Module):
-    """
-    Gradient Reversal Layer (Ganin et al., 2016).
+    """Gradient Reversal Layer (Ganin et al., 2016).
 
     Forward: identity.
     Backward (alignment path only): negates gradient by factor alpha.
@@ -38,10 +39,12 @@ class GRLLayer(nn.Module):
     """
 
     def __init__(self, alpha: float = 1.0):
+        """Initialize GRLLayer with the gradient reversal strength alpha."""
         super().__init__()
         self.alpha = alpha
 
     def forward(self, x: Tensor) -> Tensor:
+        """Apply the gradient reversal function (identity forward, negated backward)."""
         return GradientReversal.apply(x, self.alpha)
 
 
@@ -49,14 +52,14 @@ class GRLLayer(nn.Module):
 # T*-02  Alpha schedule
 # ---------------------------------------------------------------------------
 
+
 def grl_alpha_schedule(
     epoch: int,
     max_epochs: int,
     warmup_epochs: int = 20,
     alpha_max: float = 1.0,
 ) -> float:
-    """
-    Ramps alpha from 0 to alpha_max over training.
+    """Ramp alpha from 0 to alpha_max over training using a DANN sigmoid schedule.
 
     Phase 1 (0..warmup_epochs-1): alpha = 0 — cooperative training.
     Phase 2 (warmup_epochs..max_epochs): DANN sigmoid ramp.
@@ -71,9 +74,9 @@ def grl_alpha_schedule(
 # T*-03  Adversarial TCRP model wrapper
 # ---------------------------------------------------------------------------
 
+
 class AdversarialTCRPForecaster(nn.Module):
-    """
-    Wraps TCRPForecaster with a GRL on the alignment backward path.
+    """Wraps TCRPForecaster with a GRL on the alignment backward path.
 
     Exposes the same forward-pass outputs as TCRPForecaster so all downstream
     analysis (T-17 TCRP analysis pass, T-29–T-35 diagnostics) can be applied
@@ -89,24 +92,27 @@ class AdversarialTCRPForecaster(nn.Module):
     """
 
     def __init__(self, base_model: TCRPForecaster, alpha: float = 0.0):
+        """Initialize AdversarialTCRPForecaster wrapping a base model with a GRL."""
         super().__init__()
         self.base = base_model
         self.grl = GRLLayer(alpha=alpha)
 
     def set_alpha(self, alpha: float) -> None:
+        """Update the GRL reversal strength alpha."""
         self.grl.alpha = alpha
 
     def forward(self, x: Tensor) -> tuple[TCRPOutput, Tensor]:
+        """Run the dual forecast and alignment forward passes, returning (TCRPOutput, A_align)."""
         if x.dim() != 2:
             raise ValueError(f"Expected input shape (B, T), got {tuple(x.shape)}")
 
         B, T = x.shape
-        segs = self.base.segmenter(x)          # (B, N, L)
+        segs = self.base.segmenter(x)  # (B, N, L)
         N = segs.shape[1]
-        z = self.base.encoder(segs)             # (B, N, d)
+        z = self.base.encoder(segs)  # (B, N, d)
 
         # --- Forecast path (no GRL) ---
-        A_f = self.base.projection(z)           # (B, N, K)
+        A_f = self.base.projection(z)  # (B, N, K)
         h, eta = self.base.pool(A_f)
 
         if self.base.config.probabilistic:
@@ -124,7 +130,7 @@ class AdversarialTCRPForecaster(nn.Module):
             C = C_flat.view(B, N, self.base.config.K)
 
         # --- Alignment path (through GRL — gradient reversed on backward) ---
-        z_grl = self.grl(z)                    # identity forward, -alpha on backward
+        z_grl = self.grl(z)  # identity forward, -alpha on backward
         A_align = self.base.projection(z_grl)  # (B, N, K)
 
         forecast_output = TCRPOutput(y_hat=y_hat, h=h, A=A_f, C=C, eta=eta)

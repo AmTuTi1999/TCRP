@@ -1,0 +1,4 @@
+# TCRP model architecture defaults (TCRPConfig fields, excluding data/experiment params)
+
+baseline_hidden: 256
+hidden_layers: 3

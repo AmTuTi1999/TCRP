@@ -1,5 +1,4 @@
-"""
-GBM Stochastic Concepts
+"""GBM Stochastic Concepts.
 
 Estimates Geometric Brownian Motion parameters (drift μ, volatility σ) per segment
 to capture stochastic dynamics. High volatility indicates segments dominated by noise
@@ -10,13 +9,16 @@ MLE from log-returns: σ̂ = std(r), μ̂ = mean(r) + σ̂²/2  (Itô's lemma co
 """
 
 from typing import NamedTuple
+
 import torch
 from torch import Tensor
 
 
 class GBMScores(NamedTuple):
+    """Named tuple holding GBM drift and volatility estimates."""
+
     gbm_drift: Tensor  # normalized drift rate, range (-1, 1)
-    gbm_vol: Tensor    # normalized volatility, range [0, 1)
+    gbm_vol: Tensor  # normalized volatility, range [0, 1)
 
 
 def gbm_scores(
@@ -25,8 +27,7 @@ def gbm_scores(
     vol_scale: float = 5.0,
     eps: float = 1e-8,
 ) -> GBMScores:
-    """
-    Estimate GBM drift and volatility from a time series segment.
+    """Estimate GBM drift and volatility from a time series segment.
 
     The segment is shifted to be strictly positive before computing log-returns,
     making this compatible with z-scored inputs that may contain negative values.
@@ -54,15 +55,15 @@ def gbm_scores(
     s_pos = s - s_min + 1.0  # (B, L), all values >= 1.0
 
     # Log-returns: r[b, l] = log(s_pos[b, l+1] / s_pos[b, l])
-    log_s = torch.log(s_pos + eps)   # (B, L)
+    log_s = torch.log(s_pos + eps)  # (B, L)
     r = log_s[:, 1:] - log_s[:, :-1]  # (B, L-1)
 
     # MLE estimates: unbiased std, drift corrected via Itô's lemma
-    sigma_hat = r.std(dim=1, unbiased=True)           # (B,), >= 0
+    sigma_hat = r.std(dim=1, unbiased=True)  # (B,), >= 0
     mu_hat = r.mean(dim=1) + 0.5 * sigma_hat.pow(2)  # (B,)
 
-    gbm_drift = torch.tanh(drift_scale * mu_hat)           # (-1, 1)
-    gbm_vol = 1.0 - torch.exp(-vol_scale * sigma_hat)     # [0, 1)
+    gbm_drift = torch.tanh(drift_scale * mu_hat)  # (-1, 1)
+    gbm_vol = 1.0 - torch.exp(-vol_scale * sigma_hat)  # [0, 1)
 
     if squeeze_output:
         gbm_drift = gbm_drift.squeeze(0)
