@@ -8,3 +8,4 @@
 **/*.csv
 **/*.json
 *.pt
+/outputs/

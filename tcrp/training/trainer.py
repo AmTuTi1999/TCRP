@@ -1,6 +1,6 @@
 """Trainer implementation for TCRP."""
+
 import os
-from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -8,13 +8,21 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
-from tcrp.model.tcrp_forecaster.components.bottleneck import alignment_loss
+from tcrp.model.tcrp_forecaster.components.bottleneck import (
+    concept_magnitude_loss,
+    weighted_alignment_loss,
+)
 from tcrp.model.tcrp_forecaster.forecaster import TCRPConfig
 from tcrp.training.losses import LossBundle, TCRPLoss
 
 
 class Trainer:
-    def __init__(self, model: nn.Module, config: TCRPConfig, device: torch.device | None = None):
+    """Base TCRP trainer: optimiser, scheduler, early stopping, and checkpointing."""
+
+    def __init__(
+        self, model: nn.Module, config: TCRPConfig, device: torch.device | None = None
+    ):
+        """Initialise optimiser, scheduler, loss function, and checkpoint path."""
         self.model = model
         self.config = config
         self.device = device or torch.device("cpu")
@@ -22,12 +30,14 @@ class Trainer:
 
         self.optimizer = Adam(self.model.parameters(), lr=1e-3, weight_decay=0.0)
         self.scheduler = ReduceLROnPlateau(
-            self.optimizer,
-            mode="min",
-            patience=5,
-            factor=0.5,
+            self.optimizer, mode="min", patience=5, factor=0.5
         )
-        self.criterion = TCRPLoss(lambda1=config.lambda1, lambda2=config.lambda2)
+        self.criterion = TCRPLoss(
+            lambda1=config.lambda1,
+            lambda2=config.lambda2,
+            lambda3=config.lambda3,
+            lambda4=config.lambda4,
+        )
 
         self.checkpoint_dir = "checkpoints"
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -37,73 +47,95 @@ class Trainer:
         self.epochs_no_improve = 0
 
     def train_epoch(self, loader: DataLoader) -> LossBundle:
+        """Run one training epoch and return averaged loss components."""
         self.model.train()
-        total_forecast = 0.0
-        total_align = 0.0
-        total_reg = 0.0
-        total_loss = 0.0
+        totals = {
+            "forecast": 0.0,
+            "align": 0.0,
+            "mag": 0.0,
+            "stab": 0.0,
+            "reg": 0.0,
+            "total": 0.0,
+        }
         count = 0
 
-        for batch in loader:
-            x, y = batch
-            x = x.to(self.device)
-            y = y.to(self.device)
-
+        for x, y in loader:
+            x, y = x.to(self.device), y.to(self.device)
             self.optimizer.zero_grad()
             output = self.model(x)
-
-            loss_bundle = self.criterion(output.y_hat, y, output.A, output.C, self.model.projection)
-            loss_bundle.total_loss.backward()
+            lb = self.criterion(
+                output.y_hat, y, output.A, output.C, self.model.projection
+            )
+            lb.total_loss.backward()
             self.optimizer.step()
 
-            batch_size = x.shape[0]
-            total_forecast += loss_bundle.forecast_loss.item() * batch_size
-            total_align += loss_bundle.align_loss.item() * batch_size
-            total_reg += loss_bundle.reg_loss.item() * batch_size
-            total_loss += loss_bundle.total_loss.item() * batch_size
-            count += batch_size
+            n = x.shape[0]
+            totals["forecast"] += lb.forecast_loss.item() * n
+            totals["align"] += lb.align_loss.item() * n
+            totals["mag"] += lb.mag_loss.item() * n
+            totals["stab"] += lb.stab_loss.item() * n
+            totals["reg"] += lb.reg_loss.item() * n
+            totals["total"] += lb.total_loss.item() * n
+            count += n
+
+        def t(k):
+            return torch.tensor(totals[k] / count, device=self.device)
 
         return LossBundle(
-            forecast_loss=torch.tensor(total_forecast / count, device=self.device),
-            align_loss=torch.tensor(total_align / count, device=self.device),
-            reg_loss=torch.tensor(total_reg / count, device=self.device),
-            total_loss=torch.tensor(total_loss / count, device=self.device),
+            forecast_loss=t("forecast"),
+            align_loss=t("align"),
+            mag_loss=t("mag"),
+            stab_loss=t("stab"),
+            reg_loss=t("reg"),
+            total_loss=t("total"),
         )
 
-    def validate(self, loader: DataLoader) -> Dict[str, float]:
+    def validate(self, loader: DataLoader) -> dict[str, float]:
+        """Evaluate on loader and return MSE, MAE, alignment, and magnitude losses."""
         self.model.eval()
-        total_mse = 0.0
-        total_mae = 0.0
-        total_align = 0.0
+        totals = {"mse": 0.0, "mae": 0.0, "align": 0.0, "mag": 0.0}
         count = 0
 
         with torch.no_grad():
-            for batch in loader:
-                x, y = batch
-                x = x.to(self.device)
-                y = y.to(self.device)
-
+            for x, y in loader:
+                x, y = x.to(self.device), y.to(self.device)
                 output = self.model(x)
-                total_mse += nn.functional.mse_loss(output.y_hat, y, reduction="sum").item()
-                total_mae += nn.functional.l1_loss(output.y_hat, y, reduction="sum").item()
-                total_align += alignment_loss(output.A, output.C).item() * x.shape[0]
-                count += x.shape[0]
-        return {
-            "mse": total_mse / count,
-            "mae": total_mae / count,
-            "align_loss": total_align / count,
-        }
+                n = x.shape[0]
+                totals["mse"] += nn.functional.mse_loss(
+                    output.y_hat, y, reduction="sum"
+                ).item()
+                totals["mae"] += nn.functional.l1_loss(
+                    output.y_hat, y, reduction="sum"
+                ).item()
+                totals["align"] += (
+                    weighted_alignment_loss(output.A, output.C).item() * n
+                )
+                totals["mag"] += concept_magnitude_loss(output.A, output.C).item() * n
+                count += n
 
-    def fit(self, train_loader: DataLoader, val_loader: DataLoader, max_epochs: int = 100):
+        return {k: v / count for k, v in totals.items()}
+
+    def fit(
+        self, train_loader: DataLoader, val_loader: DataLoader, max_epochs: int = 100
+    ):
+        """Train with early stopping, saving the best checkpoint by val MSE."""
         for epoch in range(1, max_epochs + 1):
             train_losses = self.train_epoch(train_loader)
             val_metrics = self.validate(val_loader)
 
             self.scheduler.step(val_metrics["mse"])
-
             lr = self.optimizer.param_groups[0]["lr"]
+
             print(
-                f"{epoch} | {train_losses.forecast_loss.item():.6f} | {val_metrics['mse']:.6f} | {val_metrics['align_loss']:.6f} | {lr:.6e}"
+                f"{epoch:4d} | "
+                f"loss {train_losses.total_loss.item():.5f} | "
+                f"fore {train_losses.forecast_loss.item():.5f} | "
+                f"aln {train_losses.align_loss.item():.5f} | "
+                f"mag {train_losses.mag_loss.item():.5f} | "
+                f"stb {train_losses.stab_loss.item():.5f} | "
+                f"val_mse {val_metrics['mse']:.5f} | "
+                f"val_mag {val_metrics['mag']:.5f} | "
+                f"lr {lr:.2e}"
             )
 
             if val_metrics["mse"] < self.best_val_mse:
@@ -114,5 +146,5 @@ class Trainer:
                 self.epochs_no_improve += 1
 
             if self.epochs_no_improve >= 10:
-                print(f"Early stopping at epoch {epoch} (no improvement for {self.epochs_no_improve} epochs)")
+                print(f"Early stopping at epoch {epoch}")
                 break

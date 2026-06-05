@@ -31,9 +31,10 @@ class PipelineConfig:
     k_max: int = 2  # ACF lags in concept vector
     alpha: float = 5.0  # monotonicity sigmoid sharpness
     beta: float = 5.0  # curvature sigmoid sharpness
-    lambda1: float = 0.1  # alignment loss weight
-    lambda2: float = 1e-4  # projection regularisation weight
-    lambda3: float = 0.01  # stability loss weight (adversarial only)
+    lambda1: float = 0.1  # weighted Pearson alignment
+    lambda2: float = 1e-4  # projection weight Frobenius regularisation
+    lambda3: float = 0.01  # stability — consecutive-segment A vs C delta MSE
+    lambda4: float = 0.1  # magnitude alignment — (mean|A_k| - mean|C_k|)^2
     probabilistic: bool = False
     include_gbm: bool = False
     adversarial: bool = False  # enable adversarial (GRL) training
@@ -102,6 +103,7 @@ def tcrp_config_from_hydra(cfg: DictConfig) -> TCRPConfig:  # type: ignore[name-
         lambda1=float(m.lambda1),
         lambda2=float(m.lambda2),
         lambda3=float(m.lambda3),
+        lambda4=float(m.lambda4),
         probabilistic=bool(m.probabilistic),
         adversarial=bool(m.adversarial),
         alpha_max=float(m.alpha_max),

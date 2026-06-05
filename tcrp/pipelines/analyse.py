@@ -13,12 +13,15 @@ Optional flags:
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import torch
 from omegaconf import DictConfig
 
 from tcrp.analysis.tcrp_analysis import TCRPAnalyser, verify_conservation
+from tcrp.analysis.visualise import plot_explanation
 from tcrp.dataset.datasets import DATASET_META
 from tcrp.model.tcrp_forecaster.forecaster import TCRPConfig, TCRPForecaster
 from tcrp.utils.misc import seed_everything
@@ -73,9 +76,12 @@ def analyse(
 
     model_cfg: TCRPConfig = tcrp_config_from_hydra(cfg)
     model = TCRPForecaster(model_cfg).to(device)
-    model.load_state_dict(
-        torch.load(cfg.checkpoint_dir, map_location=device, weights_only=True)
-    )
+    state = torch.load(cfg.checkpoint_dir, map_location=device, weights_only=True)
+    # Adversarial checkpoints wrap the base model under a 'base.' prefix.
+    # Strip it so analysis always runs on a plain TCRPForecaster.
+    if all(k.startswith("base.") for k in state):
+        state = {k[len("base.") :]: v for k, v in state.items()}
+    model.load_state_dict(state)
     model.eval()
 
     if h_star < 0 or h_star >= cfg.H:
@@ -113,12 +119,46 @@ def analyse(
         print(f"    {rank}. [{idx:2d}] {name:<32s}  {val:.6f}")
     print(f"{'=' * 60}\n")
 
+    hl_raw = cfg.get("highlight_seg", None)
+    highlight_seg = int(hl_raw) if hl_raw is not None else None
+
+    _now = datetime.now()
+    run_stamp = (
+        Path(cfg.get("figures_dir", "figures"))
+        / run_name
+        / _now.strftime("%Y-%m-%d")
+        / _now.strftime("%H-%M-%S")
+    )
+
+    n_plot = int(cfg.get("n_plot_samples", 1))
+    test_ds = test_loader.dataset
+    n_test = len(test_ds)
+    plot_indices = np.linspace(0, n_test - 1, n_plot, dtype=int).tolist()
+
+    print(f"Visualising {n_plot} test samples at dataset indices {plot_indices}")
+    vis_x = torch.stack([test_ds[i][0] for i in plot_indices]).to(device)
+    vis_expl = analyser.analyse(vis_x, h_star=h_star)
+    vis_x_cpu = vis_x.cpu()
+
+    for vis_idx, ds_idx in enumerate(plot_indices):
+        plot_explanation(
+            vis_expl,
+            vis_x_cpu,
+            concept_names,
+            run_id=run_name,
+            h_star=h_star,
+            out_dir=run_stamp / f"sample_{ds_idx}",
+            sample_idx=vis_idx,
+            highlight_seg=highlight_seg,
+        )
+
     return {
         "run_name": run_name,
         "h_star": h_star,
         "n_samples": x_batch.shape[0],
         "conserved": conserved,
         "concept_names": concept_names,
+        "figures_dir": str(run_stamp),
         "explanation": {
             "R_h": explanation.R_h.cpu(),
             "R_A": explanation.R_A.cpu(),

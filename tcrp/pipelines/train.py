@@ -186,13 +186,15 @@ class AdversarialPipelineTrainer(AdversarialTrainer):
             self.scheduler.step(val_m["mse"])
             lr = self.optimizer.param_groups[0]["lr"]
 
-            stab = ""
-            if train_lb.stab_loss is not None:
-                stab = f" | {train_lb.stab_loss.item():10.6f}"
-
             print(
-                f"{epoch:6d} | α={alpha:.3f} | {train_lb.forecast_loss.item():10.6f} | "
-                f"{val_m['mse']:10.6f} | {val_m['align_loss']:10.6f}{stab} | {lr:10.2e}"
+                f"{epoch:6d} | α={alpha:.3f} | "
+                f"fc {train_lb.forecast_loss.item():.5f} | "
+                f"aln {train_lb.align_loss.item():.5f} | "
+                f"mag {train_lb.mag_loss.item():.5f} | "
+                f"stb {train_lb.stab_loss.item():.5f} | "
+                f"val_mse {val_m['mse']:.5f} | "
+                f"val_mag {val_m['mag']:.5f} | "
+                f"lr {lr:.2e}"
             )
 
             if val_m["mse"] < self.best_val_mse:
@@ -255,7 +257,8 @@ def run(cfg: DictConfig) -> dict:
     # ── Model ───────────────────────────────────────────────────────────
     ckpt_dir = Path(cfg.checkpoint_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    ckpt_path = str(ckpt_dir / f"{run_name}_best.pt")
+    mode_tag = "_adv" if (not is_baseline and model_cfg.adversarial) else "_std"
+    ckpt_path = str(ckpt_dir / f"{run_name}{mode_tag}_best.pt")
 
     if is_baseline:
         model = build_baseline(

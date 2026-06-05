@@ -24,6 +24,9 @@ class TCRPExplanation:
     eta: Tensor
     A: Tensor
     C: Tensor
+    # Segmentation metadata — needed for segment-level visualisations.
+    starts: Tensor  # (N,) integer start indices of each segment
+    L: int  # segment length in timesteps
 
 
 class TCRPAnalyser:
@@ -65,14 +68,12 @@ class TCRPAnalyser:
         R_x = self._assemble_relevance(
             R_s,
             self.model.segmenter.start_indices,
-            self.model.segmenter.overlap_counts,
             T,
         )
         R_x_cond = self._assemble_concept_conditional(
             R_s,
             R_A,
             self.model.segmenter.start_indices,
-            self.model.segmenter.overlap_counts,
             T,
         )
 
@@ -84,6 +85,8 @@ class TCRPAnalyser:
             eta=eta,
             A=A,
             C=C,
+            starts=self.model.segmenter.start_indices,
+            L=L,
         )
 
     def _encode_with_cache(self, segments: Tensor) -> tuple[Tensor, list, Tensor]:
@@ -172,32 +175,30 @@ class TCRPAnalyser:
 
         return R_current.view(B, N, R_current.shape[-1])
 
-    def _assemble_relevance(
-        self, R_s: Tensor, starts: Tensor, overlap: Tensor, T: int
-    ) -> Tensor:
+    def _assemble_relevance(self, R_s: Tensor, starts: Tensor, T: int) -> Tensor:
         B, N, L = R_s.shape
         R_x = torch.zeros(B, T, device=R_s.device, dtype=R_s.dtype)
         for n in range(N):
             start = starts[n].item()
             R_x[:, start : start + L] += R_s[:, n, :]
-        # clamp(min=1) avoids divide-by-zero for timesteps not covered by any segment
-        R_x = R_x / overlap.clamp(min=1).unsqueeze(0)
+        # Do NOT divide by overlap — averaging over segments breaks LRP conservation.
+        # sum_t R_x[t] must equal y_hat[h_star]; dividing by overlap deflates the sum
+        # by the mean overlap factor (~N*L/T).
         return R_x
 
     def _assemble_concept_conditional(
-        self, R_s: Tensor, R_A: Tensor, starts: Tensor, overlap: Tensor, T: int
+        self, R_s: Tensor, R_A: Tensor, starts: Tensor, T: int
     ) -> Tensor:
         B, N, L = R_s.shape
         K = R_A.shape[-1]
         weight = R_A / (R_A.sum(dim=2, keepdim=True) + self.eps)
-        safe_overlap = overlap.clamp(min=1)
         R_x_cond = torch.zeros(B, K, T, device=R_s.device, dtype=R_s.dtype)
         for n in range(N):
             start = starts[n].item()
             weighted = weight[:, n, :].unsqueeze(-1) * R_s[:, n, :].unsqueeze(1)
-            R_x_cond[:, :, start : start + L] += weighted / safe_overlap[
-                start : start + L
-            ].unsqueeze(0).unsqueeze(0)
+            R_x_cond[:, :, start : start + L] += weighted
+        # No overlap division — must match _assemble_relevance so that
+        # R_x_cond.sum(dim=1) == R_x remains consistent.
         return R_x_cond
 
 
