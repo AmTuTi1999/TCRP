@@ -114,6 +114,8 @@ class PipelineTrainer(Trainer):
             align_loss=torch.tensor(totals["align"] / count, device=self.device),
             reg_loss=torch.tensor(totals["reg"] / count, device=self.device),
             total_loss=torch.tensor(totals["total"] / count, device=self.device),
+            mag_loss=None,
+            stab_loss=None,
         )
 
     # Override to use configurable ES patience
@@ -128,7 +130,7 @@ class PipelineTrainer(Trainer):
             lr = self.optimizer.param_groups[0]["lr"]
             print(
                 f"{epoch:6d} | {train_lb.forecast_loss.item():10.6f} | "
-                f"{val_m['mse']:10.6f} | {val_m['align_loss']:10.6f} | {lr:10.2e}"
+                f"{val_m['mse']:10.6f} | {val_m['align']:10.6f} | {lr:10.2e}"
             )
             if val_m["mse"] < self.best_val_mse:
                 self.best_val_mse = val_m["mse"]
@@ -344,6 +346,7 @@ def run(cfg: DictConfig) -> dict:
         "test_mse": test_m["mse"],
         "test_mae": test_m["mae"],
         "test_rmse": test_m["rmse"],
+        "checkpoint_path": trainer.checkpoint_path,
     }
     results_path = save_results(results, run_name)
 

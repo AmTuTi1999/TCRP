@@ -1,10 +1,10 @@
 # Training hyperparameters
-lr:                       1.0e-3
-batch_size:               32
-max_epochs:               100
-early_stopping_patience:  10
-lr_patience:              5
-lr_factor:                0.5
-grad_clip:                1.0
-num_workers:              0
-seed:                     42
+lr: 1.0e-3
+batch_size: 32
+max_epochs: 100
+early_stopping_patience: 100
+lr_patience: 5
+lr_factor: 0.5
+grad_clip: 1.0
+num_workers: 0
+seed: 42

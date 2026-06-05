@@ -22,8 +22,8 @@ class LossBundle:
 
     forecast_loss: Tensor
     align_loss: Tensor
-    mag_loss: Tensor
-    stab_loss: Tensor
+    mag_loss: Tensor | None
+    stab_loss: Tensor | None
     reg_loss: Tensor
     total_loss: Tensor
 
