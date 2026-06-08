@@ -36,6 +36,7 @@ def build_loaders(
     ds = cfg.datasets
     tr = cfg.trainers
     meta = DATASET_META[ds.dataset]
+    print(f"Dataset  {ds.dataset}  T={cfg.T}  H={cfg.H}  univariate={ds.univariate}")
     path = str(Path(ds.data_root) / meta["filename"])
     target_col = ds.target_col if ds.univariate else None
     loader_kw = {
@@ -228,18 +229,21 @@ def run(cfg: DictConfig) -> dict:
     )
 
     is_baseline = cfg.model_type.lower() in _BASELINE_TYPES
-    mode_str = cfg.model_type + (
-        "-adv" if model_cfg.adversarial and not is_baseline else ""
-    )
+
+    mode_str = cfg.model_type
+    if not is_baseline:
+        mode_str = cfg.model_type + ("-adv" if model_cfg.adversarial else "")
     print(f"{'=' * 66}")
     print(f"  Training [{mode_str}] — {run_name}")
     print(
         f"  device={device}  seed={trainer_cfg.seed}  lr={trainer_cfg.lr}  clip={trainer_cfg.grad_clip}"
     )
-    if model_cfg.adversarial and not is_baseline:
-        print(
-            f"  alpha_max={model_cfg.alpha_max}  warmup={model_cfg.warmup_epochs}  lambda3={model_cfg.lambda3}"
-        )
+
+    if not is_baseline:
+        if model_cfg.adversarial:
+            print(
+                f"  alpha_max={model_cfg.alpha_max}  warmup={model_cfg.warmup_epochs}  lambda3={model_cfg.lambda3}"
+            )
     if is_baseline:
         print(
             f"  hidden={model_cfg.baseline_hidden}  layers={model_cfg.baseline_layers}"

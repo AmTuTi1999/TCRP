@@ -1,0 +1,14 @@
+# @package _global_
+# Base config for TCRP classification experiments.
+# Override with: +experiments/classification=exp_c01_ecg5000
+defaults:
+  - models: tcrp_classifier
+  - datasets: ecg5000
+  - trainers: classification_trainer
+  - experiments/classification: null
+  - _self_
+
+model_type: tcrp_classifier
+checkpoint_dir: checkpoints
+run_name: ''
+seed: 42

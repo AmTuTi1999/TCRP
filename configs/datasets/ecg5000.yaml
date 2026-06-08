@@ -1,0 +1,8 @@
+# ECG5000 — UCR Time Series Archive (EXP-C01)
+dataset: ECG5000
+data_root: tcrp/data/raw/ECG5000
+T: 140
+C: 5 # normal sinus, R-on-T PVC, PVC, paced beat, others
+periods: [4, 6, 8, 10] # samples per beat at typical heart rate
+weighted_sampling: false # modest class imbalance; use macro F1 as primary metric
+univariate: true

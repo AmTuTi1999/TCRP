@@ -1,0 +1,10 @@
+# @package _global_
+# Overrides train.yaml for ettm2_H96
+defaults:
+  - override /datasets: exchange_rate
+  - override /models: lstm
+  - override /trainers: baseline_trainer
+
+T: 336
+H: 96
+run_name: exchange_rate_baseline

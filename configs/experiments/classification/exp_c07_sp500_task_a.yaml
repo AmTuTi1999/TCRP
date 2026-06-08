@@ -1,0 +1,27 @@
+# @package _global_
+# EXP-C07 Task A · S&P 500 binary recession classification
+# T=252 (1 trading year), C=2 (expansion=0, recession=1), K=18
+# Requires data download — see tcrp/data/classification_datasets.py
+defaults:
+  - override /datasets: sp500
+
+run_name: EXP-C07_SP500_TaskA
+
+# Model overrides — no periodicity on daily returns
+models:
+  L: 21
+  stride: 5
+  periods: [] # returns near-white-noise at segment scale
+  k_max: 2 # K = 16+2+0 = 18
+
+# Trainer overrides — recessions are minority class
+trainers:
+  batch_size: 32
+  max_epochs: 150
+  early_stopping_patience: 20
+  weighted_sampling: true
+  lr: 5.0e-4
+
+# Expected concept findings (for reference):
+#   - Monotonicity + observed tendency dominate recession detection
+#     (sustained negative trend is the defining recession signal)

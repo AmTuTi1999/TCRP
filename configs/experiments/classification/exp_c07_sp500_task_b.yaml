@@ -1,0 +1,30 @@
+# @package _global_
+# EXP-C07 Task B · S&P 500 volatility regime classification (VIX terciles)
+# T=252, C=3 (low/medium/high VIX tercile), K=18
+# Requires data download — see tcrp/data/classification_datasets.py
+defaults:
+  - override /datasets: sp500
+
+run_name: EXP-C07_SP500_TaskB
+
+datasets:
+  dataset: SP500_B # override to volatility-regime label file
+  C: 3
+
+# Model overrides
+models:
+  L: 21
+  stride: 5
+  periods: []
+  k_max: 2 # K = 16+2+0 = 18
+
+# Trainer overrides
+trainers:
+  batch_size: 32
+  max_epochs: 150
+  early_stopping_patience: 20
+  weighted_sampling: false
+  lr: 5.0e-4
+
+# Expected concept findings (for reference):
+#   - Volatility level and ARCH clustering dominate VIX regime classification

@@ -1,0 +1,28 @@
+# @package _global_
+# EXP-C03 · Sleep stage classification (Sleep-EDF Cassette)
+# T=3000 (30 s at 100 Hz), C=5, periods=[100,500], K=20
+# Requires data download — see tcrp/data/classification_datasets.py
+defaults:
+  - override /datasets: sleep_edf
+
+run_name: EXP-C03_SleepEDF
+
+# Model overrides
+models:
+  L: 100
+  stride: 50
+  periods: [100, 500] # 1 s and 5 s physiological oscillations at 100 Hz
+  k_max: 2 # K = 16+2+2 = 20
+
+# Trainer overrides — weighted sampling: N2 dominates, N1/Wake sparse
+trainers:
+  batch_size: 32
+  max_epochs: 150
+  early_stopping_patience: 20
+  weighted_sampling: true
+  lr: 5.0e-4
+
+# Expected concept findings (for reference):
+#   - N3: monotonicity + low stochasticity (delta waves 0.5–4 Hz)
+#   - N2: periodicity (sleep spindles ~14 Hz, captured by period=100 concept)
+#   - REM: stochasticity dominant (irregular EEG)

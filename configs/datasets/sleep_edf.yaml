@@ -1,0 +1,10 @@
+# Sleep-EDF Cassette — sleep stage classification (EXP-C03)
+# Physionet: 20 subjects, single Fpz-Cz EEG channel, 100 Hz, 30-second epochs.
+# Requires download — see tcrp/data/classification_datasets.py _SLEEP_EDF_DOWNLOAD.
+dataset: SleepEDF
+data_root: tcrp/data/raw/Sleep-EDF
+T: 3000
+C: 5 # Wake, N1, N2, N3, REM
+periods: [100, 500] # 1 s (100 Hz) and 5 s physiological oscillations
+weighted_sampling: true # N2 dominates; Wake and N1 underrepresented
+univariate: true

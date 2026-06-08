@@ -1,0 +1,29 @@
+# @package _global_
+# EXP-C06 · EthanolConcentration classification (UCR Archive)
+# T=1751, C=4, no periodicity, K=18
+# Tests stochasticity/autocorrelation concepts; periodicity should be near-zero.
+# Requires data download — see tcrp/data/classification_datasets.py
+defaults:
+  - override /datasets: ethanol_concentration
+
+run_name: EXP-C06_Ethanol
+
+# Model overrides — full vocabulary minus periodicity (K=18)
+models:
+  L: 50
+  stride: 20
+  periods: [] # disable periodicity concepts
+  k_max: 2 # K = 16+2+0 = 18
+
+# Trainer overrides
+trainers:
+  batch_size: 32
+  max_epochs: 150
+  early_stopping_patience: 20
+  weighted_sampling: false
+  lr: 5.0e-4
+
+# Diagnostic target (from tasks_classification.md):
+#   - Periodicity concepts must receive near-zero relevance (ground-truth certified)
+#   - If bypass ratio > 0.3, bottleneck is leaking non-concept information (T-31 flag)
+#   - Stochasticity and autocorrelation concepts should carry the discriminative signal

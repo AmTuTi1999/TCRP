@@ -1,0 +1,26 @@
+# @package _global_
+# EXP-C02 · ECG heartbeat classification (MIT-BIH Arrhythmia Database)
+# T=187, C=5 AAMI classes, periods=[18,36], K=20
+defaults:
+  - override /datasets: mitbih
+
+run_name: EXP-C02_MITBIH
+
+# Model overrides
+models:
+  L: 25
+  stride: 5
+  periods: [18, 36] # half-beat and full-beat at 360 Hz / ~100 bpm
+  k_max: 2 # K = 16+2+2 = 20
+
+# Trainer overrides — weighted sampling for severe N-class imbalance
+trainers:
+  batch_size: 128
+  max_epochs: 150
+  early_stopping_patience: 20
+  weighted_sampling: true
+
+# Expected concept findings (for reference):
+#   - V class: wide QRS → high monotonicity, high jump indicator
+#   - S class: narrow QRS, abnormal P wave → stochasticity in P-wave region
+#   - F class: mixed morphology → high break score at QRS onset

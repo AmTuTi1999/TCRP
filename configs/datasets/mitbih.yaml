@@ -1,0 +1,9 @@
+# MIT-BIH Arrhythmia — heartbeat classification (EXP-C02)
+# Pre-segmented 187-sample heartbeat windows (Kachuee et al. Kaggle split).
+dataset: MITBIH
+data_root: tcrp/data/raw/CRWU
+T: 187
+C: 5 # AAMI classes: N=0, S=1, V=2, F=3, Q=4
+periods: [18, 36] # half-beat and full-beat at 360 Hz / ~100 bpm
+weighted_sampling: true # severe class imbalance: N >> S, V, F, Q
+univariate: true

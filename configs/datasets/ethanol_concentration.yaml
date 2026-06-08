@@ -1,0 +1,11 @@
+# EthanolConcentration — UCR Archive (EXP-C06)
+# 524 spectrometer time series, T=1751, 4 ethanol concentration levels.
+# No periodicity expected — tests stochasticity and autocorrelation concepts.
+# Requires download — see tcrp/data/classification_datasets.py _ETHANOL_DOWNLOAD.
+dataset: Ethanol
+data_root: tcrp/data/raw/EthanolConcentration
+T: 1751
+C: 4
+periods: [] # disable periodicity concepts (K=18 with k_max=2)
+weighted_sampling: false
+univariate: true

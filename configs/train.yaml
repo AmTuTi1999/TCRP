@@ -3,10 +3,11 @@ defaults:
   - models: tcrp
   - datasets: etth1
   - trainers: tcrp_trainer
+  - experiments/training: null
   - _self_
 
-T:          336
-H:          96
+T: 336
+H: 96
 model_type: tcrp
 include_gbm: false
 checkpoint_dir: checkpoints

@@ -1,0 +1,27 @@
+# @package _global_
+# EXP-C01 · ECG arrhythmia classification (ECG5000)
+# EXP-C01: ECG5000, T=140, C=5, periods=[4,6,8,10], K=22
+defaults:
+  - override /datasets: ecg5000
+
+run_name: EXP-C01_ECG5000
+
+# Model overrides
+models:
+  L: 20
+  stride: 5
+  periods: [4, 6, 8, 10] # samples/beat at ~70 bpm with T=140
+  k_max: 2 # K = 16+2+4 = 22
+
+# Trainer overrides
+trainers:
+  batch_size: 64
+  max_epochs: 150
+  early_stopping_patience: 20
+  weighted_sampling: false
+
+# Expected concept findings (for reference):
+#   - Periodicity dominant for class 0 (normal sinus, regular R-R)
+#   - Stochasticity dominant for atrial fibrillation patterns
+#   - Shape (skewness, jump) dominant for PVC (ectopic beat, class 2)
+#   - Temporal maps should localise P-wave, QRS, T-wave regions

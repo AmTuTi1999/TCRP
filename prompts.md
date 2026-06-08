@@ -65,9 +65,9 @@ poetry run python train_script.py +experiment=etth1_baseline \
 ## Adversarial vs Standard Comparison
 
 ```bash
-python3 scripts/adversarial_compare.py --dataset ETTh1 --H 96 --seed 42
+poetry run python scripts/adversarial_compare.py --dataset ETTh1 --H 96 --seed 42
 
-python3 scripts/adversarial_compare.py --dataset ETTh1 --H 96 --seed 42 \
+poetry run python scripts/adversarial_compare.py --dataset ETTh1 --H 96 --seed 42 \
     --out results/adv_compare_etth1_tcrp.json
 ```
 
@@ -76,11 +76,11 @@ python3 scripts/adversarial_compare.py --dataset ETTh1 --H 96 --seed 42 \
 ## Evaluate a Saved Checkpoint
 
 ```bash
-python3 -m tcrp.pipelines.evaluate \
+poetry run python -m tcrp.pipelines.evaluate \
     --config configs/train.yaml \
     --checkpoint checkpoints/etth1_tcrp_best.pt
 
-python3 -m tcrp.pipelines.evaluate \
+poetry run python -m tcrp.pipelines.evaluate \
     --config configs/train.yaml \
     --checkpoint checkpoints/etth1_tcrp_best.pt \
     --out results/etth1_tcrp_test.json
@@ -116,3 +116,94 @@ python3 -m tcrp.pipelines.evaluate \
 | Dataset configs      | `configs/datasets/{dataset}.yaml`            |
 | Trainer defaults     | `configs/trainers/tcrp_trainer.yaml`         |
 | Experiment overrides | `configs/experiments/{dataset}_{model}.yaml` |
+
+---
+
+## Classification Experiments (EXP-C01 – EXP-C08)
+
+Classification entry point is `scripts/run_classification.py`.
+Config tree mirrors the forecasting tree under `train_classification.yaml`.
+
+```
+configs/
+  train_classification.yaml           ← entry point (defaults: tcrp_classifier + dataset + classification_trainer)
+  models/tcrp_classifier.yaml         ← classifier model defaults
+  datasets/{ecg5000,mitbih,…}.yaml    ← classification dataset configs
+  trainers/classification_trainer.yaml
+  experiments/classification/         ← per-experiment overrides (exp_c01_ecg5000, …)
+```
+
+### Set 1 — Physiological / Clinical
+
+```bash
+# EXP-C01 · ECG5000 arrhythmia (T=140, C=5) — data available locally
+poetry run python scripts/run_classification.py --experiment EXP-C01 --seed 42
+
+# Multiple seeds
+for seed in 0 1 2 3 4; do
+    poetry run python scripts/run_classification.py --experiment EXP-C01 --seed $seed
+done
+
+# EXP-C02 · MIT-BIH heartbeat (T=187, C=5) — data available locally
+poetry run python scripts/run_classification.py --experiment EXP-C02 --seed 42
+
+# EXP-C03 · Sleep-EDF sleep stages (T=3000, C=5) — requires download
+poetry run python scripts/run_classification.py --experiment EXP-C03 --seed 42
+```
+
+### Set 2 — Industrial / Fault Detection
+
+```bash
+# EXP-C04 · CWRU bearing faults (T=1024, C=4) — requires download
+poetry run python scripts/run_classification.py --experiment EXP-C04 --seed 42
+
+# EXP-C05 · UCI-HAR human activity (T=128, C=6) — requires download
+poetry run python scripts/run_classification.py --experiment EXP-C05 --seed 42
+
+# EXP-C06 · EthanolConcentration (T=1751, C=4, no periodicity) — requires download
+poetry run python scripts/run_classification.py --experiment EXP-C06 --seed 42
+```
+
+### Set 3 — Financial / Economic
+
+```bash
+# EXP-C07 Task A · S&P 500 recession classification (C=2) — requires download
+poetry run python scripts/run_classification.py --experiment EXP-C07-A --seed 42
+
+# EXP-C07 Task B · S&P 500 volatility regime (C=3) — requires download
+poetry run python scripts/run_classification.py --experiment EXP-C07-B --seed 42
+
+# EXP-C08 · FX EURUSD trend/mean-reversion regime (T=21, C=3) — data available locally
+poetry run python scripts/run_classification.py --experiment EXP-C08 --seed 42
+```
+
+#### Analyse
+
+````bash
+poetry run python crp_analysis_script.py datasets=ecg5000 ++checkpoint_dir="checkpoints/EXP-C01_seed42_best.pt" ++run_name="ECG_5000_classification" ++model_type="tcrp_classifier"
+### Adversarial training variant
+
+```bash
+poetry run python scripts/run_classification.py --experiment EXP-C01 --seed 42 --adversarial
+poetry run python scripts/run_classification.py --experiment EXP-C07-A --seed 42 --adversarial
+````
+
+### Classification overrides table
+
+| Field              | Example                         |
+| ------------------ | ------------------------------- |
+| `--experiment`     | `EXP-C01` … `EXP-C08`           |
+| `--seed`           | `--seed 0`                      |
+| `--adversarial`    | enables GRL training            |
+| `--results_dir`    | `--results_dir results/`        |
+| `--checkpoint_dir` | `--checkpoint_dir checkpoints/` |
+
+### Classification config locations
+
+| Type                 | Path                                                    |
+| -------------------- | ------------------------------------------------------- |
+| Entry point          | `configs/train_classification.yaml`                     |
+| Model defaults       | `configs/models/tcrp_classifier.yaml`                   |
+| Dataset configs      | `configs/datasets/{ecg5000,mitbih,cwru,…}.yaml`         |
+| Trainer defaults     | `configs/trainers/classification_trainer.yaml`          |
+| Experiment overrides | `configs/experiments/classification/exp_c0{1-8}_*.yaml` |

@@ -1,0 +1,10 @@
+# @package _global_
+# Overrides train.yaml for weather_H96
+defaults:
+  - override /datasets: weather
+  - override /models: lstm
+  - override /trainers: baseline_trainer
+
+T: 336
+H: 96
+run_name: weather_baseline

@@ -1,0 +1,11 @@
+# UCI-HAR — Human Activity Recognition (EXP-C05)
+# 30 subjects, accelerometer total-acceleration magnitude at 50 Hz.
+# 2.56-second windows (128 samples), 50% overlap.
+# Requires download — see tcrp/data/classification_datasets.py _UCI_HAR_DOWNLOAD.
+dataset: UCIHAR
+data_root: tcrp/data/raw/UCI-HAR
+T: 128
+C: 6 # walking, upstairs, downstairs, sitting, standing, lying
+periods: [10, 20] # step frequency ~2 Hz and double-step at 50 Hz
+weighted_sampling: false
+univariate: true

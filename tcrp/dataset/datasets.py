@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader, Dataset
 # Per-dataset metadata: CSVfilename, target column for univariate mode,
 # and the name of any date/timestamp column to drop.
 DATASET_META: dict = {
+    # ── Forecasting datasets ─────────────────────────────────────────────────
     "ETTh1": {
         "filename": "ETTh1.csv",
         "target": "OT",
@@ -44,6 +45,81 @@ DATASET_META: dict = {
         "filename": "gefcom2014.csv",
         "target": "LOAD",
         "date_col": "date",
+    },
+    # ── Classification datasets ──────────────────────────────────────────────
+    # Loaded by tcrp.data.classification_datasets, not TimeSeriesDataset.
+    # Metadata kept here for reference: T, C, loader class, data root.
+    "ECG5000": {
+        "loader": "ECG5000Dataset",
+        "data_root": "tcrp/data/raw/ECG5000",
+        "T": 140,
+        "C": 5,
+        "periods": [4, 6, 8, 10],
+        "description": "ECG arrhythmia classification (UCR). EXP-C01.",
+    },
+    "MITBIH": {
+        "loader": "MITBIHDataset",
+        "data_root": "tcrp/data/raw/CRWU",
+        "T": 187,
+        "C": 5,
+        "periods": [18, 36],
+        "description": "MIT-BIH heartbeat classification, AAMI 5-class. EXP-C02.",
+    },
+    "SleepEDF": {
+        "loader": "NPZClassificationDataset",
+        "data_root": "tcrp/data/raw/Sleep-EDF",
+        "T": 3000,
+        "C": 5,
+        "periods": [100, 500],
+        "description": "Sleep-EDF Cassette sleep-stage classification. EXP-C03.",
+    },
+    "CWRU": {
+        "loader": "NPZClassificationDataset",
+        "data_root": "tcrp/data/raw/CWRU",
+        "T": 1024,
+        "C": 4,
+        "periods": [32, 64],
+        "description": "CWRU bearing fault classification (12 kHz vibration). EXP-C04.",
+    },
+    "UCIHAR": {
+        "loader": "NPZClassificationDataset",
+        "data_root": "tcrp/data/raw/UCI-HAR",
+        "T": 128,
+        "C": 6,
+        "periods": [10, 20],
+        "description": "UCI Human Activity Recognition (50 Hz accelerometer). EXP-C05.",
+    },
+    "Ethanol": {
+        "loader": "NPZClassificationDataset",
+        "data_root": "tcrp/data/raw/EthanolConcentration",
+        "T": 1751,
+        "C": 4,
+        "periods": [],
+        "description": "EthanolConcentration spectrometer classification (UCR). EXP-C06.",
+    },
+    "SP500_A": {
+        "loader": "NPZClassificationDataset",
+        "data_root": "tcrp/data/raw/SP500",
+        "T": 252,
+        "C": 2,
+        "periods": [],
+        "description": "S&P 500 binary recession classification (NBER labels). EXP-C07-A.",
+    },
+    "SP500_B": {
+        "loader": "NPZClassificationDataset",
+        "data_root": "tcrp/data/raw/SP500",
+        "T": 252,
+        "C": 3,
+        "periods": [],
+        "description": "S&P 500 VIX-regime classification (low/mid/high). EXP-C07-B.",
+    },
+    "FX": {
+        "loader": "FXRegimeDataset",
+        "data_root": "tcrp/data/raw/HISTDATA_COM_ASCII_EURUSD_T202512",
+        "T": 21,
+        "C": 3,
+        "periods": [],
+        "description": "EURUSD Hurst-based trend/mean-reversion regime. EXP-C08.",
     },
 }
 

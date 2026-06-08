@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - override /datasets: ettm2
+  - override /models: tcn
+  - override /trainers: baseline_trainer
+
+T: 336
+H: 96
+model_type: tcn
+run_name: ettm2_tcn_baseline

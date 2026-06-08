@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - override /datasets: etth1
+  - override /models: nbeats
+  - override /trainers: baseline_trainer
+
+T: 336
+H: 96
+model_type: nbeats
+include_gbm: true
+run_name: etth1_nbeats_baseline

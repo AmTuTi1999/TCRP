@@ -1,0 +1,11 @@
+# Training hyperparameters for TCRPClassifier
+lr: 1.0e-3
+batch_size: 64
+max_epochs: 150
+early_stopping_patience: 20
+lr_patience: 5
+lr_factor: 0.5
+grad_clip: 1.0
+num_workers: 0
+seed: 42
+weighted_sampling: false # set true for heavily imbalanced datasets (MIT-BIH, Sleep-EDF)

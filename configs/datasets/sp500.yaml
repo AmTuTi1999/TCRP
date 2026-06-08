@@ -1,0 +1,11 @@
+# S&P 500 — regime classification (EXP-C07)
+# Daily log-returns 2000–2022 with NBER recession / VIX-regime labels.
+# Requires download — see tcrp/data/classification_datasets.py _SP500_DOWNLOAD.
+# C is set per-task in the experiment config (2 for Task A, 3 for Task B).
+dataset: SP500_A # override with SP500_B for volatility regime task
+data_root: tcrp/data/raw/SP500
+T: 252 # 1 trading year look-back
+C: 2 # Task A default: recession (1) / expansion (0)
+periods: [] # returns near-white-noise at segment scale; no periodicity
+weighted_sampling: true # recessions are minority class
+univariate: true

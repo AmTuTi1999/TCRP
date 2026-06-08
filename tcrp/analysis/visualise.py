@@ -95,10 +95,12 @@ def plot_temporal(
     run_id: str,
     h_star: int,
     out_dir: Path,
+    label: str | None = None,
 ) -> None:
     """Plot R_x temporal relevance overlaid on the raw input signal."""
     T = len(x)
     t = np.arange(T)
+    tag = label if label is not None else f"h*={h_star}"
 
     fig, (ax_x, ax_r) = plt.subplots(
         2,
@@ -107,7 +109,7 @@ def plot_temporal(
         sharex=True,
         gridspec_kw={"height_ratios": [2, 1], "hspace": 0.08},
     )
-    fig.suptitle(f"{run_id} · temporal relevance  (h*={h_star})", fontsize=11, y=1.01)
+    fig.suptitle(f"{run_id} · temporal relevance  ({tag})", fontsize=11, y=1.01)
 
     ax_x.plot(t, x, color="#2c7bb6", lw=1.2, label="input  x")
     ax_x.set_ylabel("Normalised value", fontsize=9)
@@ -137,39 +139,68 @@ def plot_concept_maps(
     run_id: str,
     h_star: int,
     out_dir: Path,
+    top_k: int = 10,
+    label: str | None = None,
 ) -> None:
-    """Plot stacked concept-conditional temporal relevance maps."""
+    """Plot stacked concept-conditional temporal relevance maps.
+
+    Only the top-k concepts by mean absolute contribution are shown individually;
+    the remainder are summed into a single grey "other" band so the dominant
+    concepts are not obscured by many near-zero traces.
+    """
     K, T = R_x_cond.shape
     t = np.arange(T)
-    colors = [_concept_color(n, i) for i, n in enumerate(concept_names)]
 
+    # Rank concepts by mean absolute contribution and keep top_k.
+    mean_abs = np.abs(R_x_cond).mean(axis=1)
+    top_idx = np.argsort(mean_abs)[::-1][:top_k]
+    other_idx = np.argsort(mean_abs)[::-1][top_k:]
+
+    # Build reduced arrays: top concepts + one "other" row.
+    top_signals = R_x_cond[top_idx]
+    top_names = [concept_names[i] for i in top_idx]
+    top_colors = [_concept_color(concept_names[i], i) for i in top_idx]
+
+    if len(other_idx):
+        other_signal = R_x_cond[other_idx].sum(axis=0, keepdims=True)
+        plot_signals = np.concatenate([top_signals, other_signal], axis=0)
+        plot_names = top_names + ["other"]
+        plot_colors = top_colors + ["#cccccc"]
+    else:
+        plot_signals = top_signals
+        plot_names = top_names
+        plot_colors = top_colors
+
+    tag = label if label is not None else f"h*={h_star}"
     fig, ax = plt.subplots(figsize=(13, 4))
     fig.suptitle(
-        f"{run_id} · concept-conditional temporal maps  (h*={h_star})", fontsize=11
+        f"{run_id} · concept-conditional temporal maps  ({tag}, top {top_k} shown)",
+        fontsize=11,
     )
 
     pos_floor = np.zeros(T)
-    for k in range(K):
-        contrib = np.clip(R_x_cond[k], 0, None)
-        ax.fill_between(t, pos_floor, pos_floor + contrib, color=colors[k], alpha=0.85)
+    for sig, col in zip(plot_signals, plot_colors, strict=False):
+        contrib = np.clip(sig, 0, None)
+        ax.fill_between(t, pos_floor, pos_floor + contrib, color=col, alpha=0.85)
         pos_floor += contrib
 
     neg_floor = np.zeros(T)
-    for k in range(K):
-        contrib = np.clip(R_x_cond[k], None, 0)
-        ax.fill_between(t, neg_floor + contrib, neg_floor, color=colors[k], alpha=0.85)
+    for sig, col in zip(plot_signals, plot_colors, strict=False):
+        contrib = np.clip(sig, None, 0)
+        ax.fill_between(t, neg_floor + contrib, neg_floor, color=col, alpha=0.85)
         neg_floor += contrib
 
     ax.plot(t, R_x, color="black", lw=1.2, ls="-", label="R_x (total)", zorder=5)
     ax.axhline(0, color="black", lw=0.5, ls="--")
 
     patches = [
-        mpatches.Patch(color=colors[k], label=concept_names[k]) for k in range(K)
+        mpatches.Patch(color=col, label=name)
+        for col, name in zip(plot_colors, plot_names, strict=False)
     ]
     ax.legend(
         handles=patches,
-        fontsize=6.5,
-        ncol=2,
+        fontsize=7,
+        ncol=1,
         loc="upper left",
         bbox_to_anchor=(1.01, 1.0),
         framealpha=0.6,
@@ -189,14 +220,16 @@ def plot_concept_bar(
     run_id: str,
     h_star: int,
     out_dir: Path,
+    label: str | None = None,
 ) -> None:
     """Plot a bar chart of concept relevance scores R_h with sign colouring."""
     K = len(R_h)
+    tag = label if label is not None else f"h*={h_star}"
     colors = [_concept_color(n, i) for i, n in enumerate(concept_names)]
     bar_colors = [c if R_h[i] >= 0 else _darken(c) for i, c in enumerate(colors)]
 
     fig, ax = plt.subplots(figsize=(max(8, K * 0.55), 4))
-    fig.suptitle(f"{run_id} · concept relevance  R_h  (h*={h_star})", fontsize=11)
+    fig.suptitle(f"{run_id} · concept relevance  R_h  ({tag})", fontsize=11)
 
     x_pos = np.arange(K)
     bars = ax.bar(x_pos, R_h, color=bar_colors, edgecolor="white", linewidth=0.4)
@@ -233,9 +266,11 @@ def plot_segment_heatmap(
     run_id: str,
     h_star: int,
     out_dir: Path,
+    label: str | None = None,
 ) -> None:
     """Plot a diverging heatmap of segment-by-concept relevance scores R_A."""
     N, K = R_A.shape
+    tag = label if label is not None else f"h*={h_star}"
     vmax = max(np.abs(R_A).max(), 1e-9)
     norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
 
@@ -249,9 +284,7 @@ def plot_segment_heatmap(
 
     fig_h = max(4, min(12, R_A.shape[0] * 0.18))
     fig, ax = plt.subplots(figsize=(max(8, K * 0.5), fig_h))
-    fig.suptitle(
-        f"{run_id} · segment × concept relevance  R_A  (h*={h_star})", fontsize=11
-    )
+    fig.suptitle(f"{run_id} · segment × concept relevance  R_A  ({tag})", fontsize=11)
 
     im = ax.imshow(
         R_A, aspect="auto", cmap="RdBu_r", norm=norm, interpolation="nearest"
@@ -286,6 +319,7 @@ def plot_segment_concept_map(
     h_star: int,
     out_dir: Path,
     highlight_seg: int | None = None,
+    label: str | None = None,
 ) -> None:
     """Two-panel figure showing dominant concept per time region and a segment drill-down.
 
@@ -307,6 +341,7 @@ def plot_segment_concept_map(
         out_dir:       Output directory.
         highlight_seg: Segment index to drill down on.  Defaults to the segment
                        with the highest total absolute relevance.
+        label:         Optional annotation string appended to plot titles.
     """
     T = len(x)
     N, K = R_A.shape
@@ -329,10 +364,11 @@ def plot_segment_concept_map(
     colors = [_concept_color(n, i) for i, n in enumerate(concept_names)]
 
     # ── figure layout ─────────────────────────────────────────────────────────
+    tag = label if label is not None else f"h*={h_star}"
     fig, (ax_top, ax_bot) = plt.subplots(
         2, 1, figsize=(13, 7), gridspec_kw={"height_ratios": [3, 2], "hspace": 0.35}
     )
-    fig.suptitle(f"{run_id} · segment concept map  (h*={h_star})", fontsize=11, y=1.01)
+    fig.suptitle(f"{run_id} · segment concept map  ({tag})", fontsize=11, y=1.01)
 
     # ── Panel 1: time series + coloured background ────────────────────────────
     # Draw one axvspan per run of the same dominant concept.
@@ -450,6 +486,7 @@ def plot_concept_signal_vs_usage(
     run_id: str,
     h_star: int,
     out_dir: Path,
+    label: str | None = None,
 ) -> None:
     """Four-panel diagnostic comparing analytic concept signal with model usage.
 
@@ -470,8 +507,9 @@ def plot_concept_signal_vs_usage(
                Actual activation values per segment per concept.
                Lets you see whether a flat row is flat-high or flat-zero.
 
-    Panel 4 — Raw heatmap of |R_A| (N × K, column-normalised to [0, 1]):
-               LRP relevance per segment per concept, scaled for comparison.
+    Panel 4 — Raw heatmap of |R_A| (N × K, globally normalised to [0, 1]):
+               LRP relevance per segment per concept, scaled by the global max
+               so pale rows are genuinely low-relevance (not just rescaled).
                Compare with Panel 3: if a concept is strong in C but absent
                in R_A the model ignores it; if weak in C but present in R_A
                the model is amplifying a faint signal.
@@ -483,6 +521,7 @@ def plot_concept_signal_vs_usage(
         run_id:        String used in titles.
         h_star:        Horizon step being explained.
         out_dir:       Output directory.
+        label:         Optional annotation string appended to plot titles.
     """
     N, K = C.shape
     colors = [_concept_color(n, i) for i, n in enumerate(concept_names)]
@@ -491,11 +530,12 @@ def plot_concept_signal_vs_usage(
     mean_C = np.abs(C).mean(axis=0)  # (K,) — average absolute activation
     std_C = C.std(axis=0)  # (K,) — within-window variation
 
-    # Column-normalise |R_A| to [0, 1] so the heatmap is readable regardless
-    # of the overall relevance scale.
+    # Normalise |R_A| by the global max so colours reflect absolute importance.
+    # Per-column normalisation would make low-relevance concepts look equally
+    # bright as dominant ones (xi, sigma_tilde), which is misleading.
     abs_RA = np.abs(R_A)
-    col_max = abs_RA.max(axis=0, keepdims=True)
-    RA_norm = abs_RA / np.where(col_max < 1e-9, 1.0, col_max)
+    global_max = abs_RA.max()
+    RA_norm = abs_RA / (global_max if global_max > 1e-9 else 1.0)
 
     # ── figure ────────────────────────────────────────────────────────────────
     fig = plt.figure(figsize=(max(10, K * 0.55), 16))
@@ -505,9 +545,8 @@ def plot_concept_signal_vs_usage(
     ax_c = fig.add_subplot(gs[2])
     ax_r = fig.add_subplot(gs[3], sharex=ax_c)
 
-    fig.suptitle(
-        f"{run_id} · concept signal vs model usage  (h*={h_star})", fontsize=11
-    )
+    tag = label if label is not None else f"h*={h_star}"
+    fig.suptitle(f"{run_id} · concept signal vs model usage  ({tag})", fontsize=11)
 
     # ── Panel 1: mean |C| ─────────────────────────────────────────────────────
     ax_mean.bar(x_pos, mean_C, color=colors, edgecolor="white", linewidth=0.4)
@@ -566,8 +605,8 @@ def plot_concept_signal_vs_usage(
     ax_r.set_yticklabels(concept_names, fontsize=7)
     ax_r.set_xlabel("Segment  n", fontsize=8)
     ax_r.set_title(
-        "LRP relevances |R_A| (each concept scaled to its own max)  —  "
-        "compare rows with Panel 3 above",
+        "LRP relevances |R_A| (globally normalised to max)  —  "
+        "pale = low absolute relevance;  compare rows with Panel 3 above",
         fontsize=8,
     )
 
@@ -586,18 +625,22 @@ def plot_explanation(
     out_dir: Path,
     sample_idx: int = 0,
     highlight_seg: int | None = None,
+    label: str | None = None,
 ) -> Path:
-    """Produce all five TCRP analysis figures for one sample.
+    """Produce all six TCRP analysis figures for one sample.
 
     Args:
         explanation:   TCRPExplanation returned by TCRPAnalyser.analyse().
         x_batch:       Raw input batch (B, T); sample_idx selects the sample.
         concept_names: Ordered list of concept name strings.
         run_id:        String identifier used in plot titles and the output path.
-        h_star:        Horizon step that was explained (0-based).
+        h_star:        Horizon step (forecasting) or class index (classification),
+                       used only when ``label`` is not given.
         out_dir:       Directory where PNGs are written (created if absent).
         sample_idx:    Which sample in the batch to visualise (default 0).
         highlight_seg: Segment to drill down on in plot 5 (default: highest relevance).
+        label:         Override the ``h*=…`` / ``k*=…`` tag in all plot titles.
+                       E.g. ``"k*=2 (V-class)"`` for a classification explanation.
 
     Returns:
         out_dir as a resolved Path.
@@ -613,7 +656,8 @@ def plot_explanation(
     starts = _np(explanation.starts).astype(int)
     L = explanation.L
 
-    print(f"\nVisualising sample {sample_idx}  |  run={run_id}  |  h*={h_star}")
+    tag = label if label is not None else f"h*={h_star}"
+    print(f"\nVisualising sample {sample_idx}  |  run={run_id}  |  {tag}")
     print(f"  x        {x_np.shape}   [{x_np.min():.3f}, {x_np.max():.3f}]")
     print(f"  R_x      {R_x.shape}    [{R_x.min():.3e}, {R_x.max():.3e}]")
     print(f"  R_x_cond {R_x_cond.shape}")
@@ -622,10 +666,12 @@ def plot_explanation(
     print(f"  C        {C.shape}")
     print(f"  output   {out_dir}/\n")
 
-    plot_temporal(x_np, R_x, run_id, h_star, out_dir)
-    plot_concept_maps(R_x_cond, R_x, concept_names, run_id, h_star, out_dir)
-    plot_concept_bar(R_h, concept_names, run_id, h_star, out_dir)
-    plot_segment_heatmap(R_A, concept_names, run_id, h_star, out_dir)
+    plot_temporal(x_np, R_x, run_id, h_star, out_dir, label=label)
+    plot_concept_maps(
+        R_x_cond, R_x, concept_names, run_id, h_star, out_dir, label=label
+    )
+    plot_concept_bar(R_h, concept_names, run_id, h_star, out_dir, label=label)
+    plot_segment_heatmap(R_A, concept_names, run_id, h_star, out_dir, label=label)
     plot_segment_concept_map(
         x_np,
         R_A,
@@ -636,7 +682,10 @@ def plot_explanation(
         h_star,
         out_dir,
         highlight_seg=highlight_seg,
+        label=label,
     )
-    plot_concept_signal_vs_usage(C, R_A, concept_names, run_id, h_star, out_dir)
+    plot_concept_signal_vs_usage(
+        C, R_A, concept_names, run_id, h_star, out_dir, label=label
+    )
 
     return out_dir

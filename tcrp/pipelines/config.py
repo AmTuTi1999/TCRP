@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 from omegaconf import DictConfig
 
+from tcrp.model.classifier import TCRPClassConfig
 from tcrp.model.utils.types import TCRPConfig
 
 
@@ -116,6 +117,41 @@ def tcrp_config_from_hydra(cfg: DictConfig) -> TCRPConfig:  # type: ignore[name-
         lstm_encoder_bidirectional=bool(m.lstm_encoder_bidirectional),
         lstm_encoder_dropout=float(m.lstm_encoder_dropout),
         lstm_encoder_pooling=str(m.lstm_encoder_pooling),
+        attention_hidden=int(m.attention_hidden),
+        attention_temp=float(m.attention_temp),
+    )
+
+
+def tcrp_class_config_from_hydra(cfg: DictConfig) -> TCRPClassConfig:
+    """Build a TCRPClassConfig from a Hydra DictConfig for classification experiments.
+
+    Expects ``cfg.models`` for model params, ``cfg.datasets.C`` for class count.
+    """
+    m = cfg.models
+    return TCRPClassConfig(
+        C=int(cfg.datasets.C),
+        L=int(m.L),
+        stride=int(m.stride),
+        periods=list(cfg.datasets.periods),
+        k_max=int(m.k_max),
+        alpha=float(m.alpha),
+        beta=float(m.beta),
+        gamma=float(m.gamma),
+        gamma_j=float(m.gamma_j),
+        jump_threshold=float(m.jump_threshold),
+        train_std=float(m.train_std),
+        lambda1=float(m.lambda1),
+        lambda2=float(m.lambda2),
+        lambda3=float(m.lambda3),
+        lambda4=float(m.lambda4),
+        adversarial=bool(m.adversarial),
+        alpha_max=float(m.alpha_max),
+        warmup_epochs=int(m.warmup_epochs),
+        encoder_in_ch=int(m.encoder_in_ch),
+        encoder_hidden=int(m.encoder_hidden),
+        tcn_encoder_n_layers=int(m.tcn_encoder_n_layers),
+        tcn_encoder_kernel_size=int(m.tcn_encoder_kernel_size),
+        tcn_encoder_use_weight_norm=bool(m.tcn_encoder_use_weight_norm),
         attention_hidden=int(m.attention_hidden),
         attention_temp=float(m.attention_temp),
     )

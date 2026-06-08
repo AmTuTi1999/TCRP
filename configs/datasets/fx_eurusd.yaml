@@ -1,0 +1,10 @@
+# FX EURUSD — Hurst-based trend/mean-reversion regime classification (EXP-C08)
+# Labels derived analytically from rolling Hurst exponent — no human annotation.
+# Data: HISTDATA EURUSD tick data resampled to daily mid-prices.
+dataset: FX
+data_root: tcrp/data/raw/HISTDATA_COM_ASCII_EURUSD_T202512
+T: 21 # 21-day (trading month) look-back window
+C: 3 # 0=trending, 1=mean-reverting, 2=random walk
+periods: [] # no periodicity in daily FX returns; K=18
+weighted_sampling: false
+univariate: true

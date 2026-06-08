@@ -1,0 +1,16 @@
+# @package _global_
+# Overrides train.yaml for weather_H96
+defaults:
+  - datasets: null
+  - models: null
+  - trainers: baseline_trainer
+  - _self_
+  - experiments: null
+
+T: 336
+H: 96
+model_type: ''
+include_gbm: false
+checkpoint_dir: checkpoints
+seed: 42
+run_name: null

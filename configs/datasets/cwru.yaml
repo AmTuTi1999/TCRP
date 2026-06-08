@@ -1,0 +1,9 @@
+# CWRU Bearing Fault — vibration at 12 kHz (EXP-C04)
+# Case Western Reserve University Bearing Dataset (Smith & Randall, 2015).
+# Requires download — see tcrp/data/classification_datasets.py _CWRU_DOWNLOAD.
+dataset: CWRU
+data_root: tcrp/data/raw/CWRU
+T: 1024
+C: 4 # Normal, Inner race fault, Outer race fault, Ball fault
+periods: [32, 64] # fault frequencies at typical shaft speeds
+weighted_sampling: false

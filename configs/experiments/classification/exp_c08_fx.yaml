@@ -1,0 +1,28 @@
+# @package _global_
+# EXP-C08 · FX trend/mean-reversion regime classification (EURUSD)
+# T=21 (trading month), C=3, K=18
+# Labels derived analytically from rolling Hurst exponent.
+# Sanity check: stochasticity concept CAS should be ≥ 0.8 for this task.
+defaults:
+  - override /datasets: fx_eurusd
+
+run_name: EXP-C08_FX_EURUSD
+
+# Model overrides — no periodicity in daily FX returns
+models:
+  L: 5
+  stride: 1
+  periods: [] # K = 16+2+0 = 18
+  k_max: 2
+
+# Trainer overrides
+trainers:
+  batch_size: 64
+  max_epochs: 200
+  early_stopping_patience: 30
+  weighted_sampling: false
+  lr: 1.0e-3
+
+# Diagnostic target (from tasks_classification.md):
+#   - Stochasticity concept CAS ≥ 0.8 required (Hurst ground truth matches concept)
+#   - If CAS < 0.8, suspect concept scorer or alignment training failure

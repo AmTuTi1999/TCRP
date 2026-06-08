@@ -1,0 +1,28 @@
+# @package _global_
+# EXP-C05 · Human Activity Recognition (UCI-HAR)
+# T=128, C=6, periods=[10,20], K=20  (univariate: total acceleration magnitude)
+# Requires data download — see tcrp/data/classification_datasets.py
+defaults:
+  - override /datasets: uci_har
+
+run_name: EXP-C05_UCIHAR
+
+# Model overrides
+models:
+  L: 20
+  stride: 5
+  periods: [10, 20] # step frequency ~2 Hz and double-step at 50 Hz
+  k_max: 2 # K = 16+2+2 = 20
+
+# Trainer overrides
+trainers:
+  batch_size: 64
+  max_epochs: 150
+  early_stopping_patience: 20
+  weighted_sampling: false
+
+# Expected concept findings (for reference):
+#   - Walking: strong periodicity (regular step cadence ~2 Hz)
+#   - Sitting/standing: near-zero all movement concepts (static)
+#   - Stair climbing: monotonicity + high volatility (irregular steps)
+#   - Lying: near-zero across all concepts (minimal acceleration)

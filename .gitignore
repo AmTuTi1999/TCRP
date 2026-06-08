@@ -9,3 +9,4 @@
 **/*.json
 *.pt
 /outputs/
+**/tcrp/data/

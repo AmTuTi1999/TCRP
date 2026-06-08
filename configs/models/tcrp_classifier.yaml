@@ -1,0 +1,31 @@
+# TCRP Classifier model defaults (TCRPClassConfig fields)
+# Mirrors tcrp.yaml except C (num_classes) is set per-experiment via dataset config.
+
+L: 20
+stride: 5
+periods: [] # dataset-dependent — set in dataset config or experiment override
+k_max: 2
+alpha: 5.0
+beta: 5.0
+gamma: 0.5
+gamma_j: 2.0
+jump_threshold: 3.0
+train_std: 1.0
+lambda1: 0.1 # weighted Pearson alignment
+lambda2: 1.0e-4 # projection weight Frobenius regularisation
+lambda3: 0.01 # stability — consecutive-segment A vs C delta MSE
+lambda4: 0.1 # magnitude alignment
+adversarial: false
+alpha_max: 1.0
+warmup_epochs: 20
+
+# Encoder
+encoder_in_ch: 1
+encoder_hidden: 64
+tcn_encoder_n_layers: 4
+tcn_encoder_kernel_size: 3
+tcn_encoder_use_weight_norm: true
+
+# Attention pool
+attention_hidden: 32
+attention_temp: 1.0

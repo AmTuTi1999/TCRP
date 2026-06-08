@@ -1,0 +1,28 @@
+# @package _global_
+# EXP-C04 · Bearing fault classification (CWRU)
+# T=1024, C=4, periods=[32,64], K=20
+# Requires data download — see tcrp/data/classification_datasets.py
+defaults:
+  - override /datasets: cwru
+
+run_name: EXP-C04_CWRU
+
+# Model overrides
+models:
+  L: 64
+  stride: 16
+  periods: [32, 64] # fault frequencies at typical shaft speeds (12 kHz)
+  k_max: 2 # K = 16+2+2 = 20
+
+# Trainer overrides
+trainers:
+  batch_size: 64
+  max_epochs: 150
+  early_stopping_patience: 20
+  weighted_sampling: false
+
+# Expected concept findings (for reference):
+#   - Kurtosis concept highest relevance for all fault classes (impulsive vibration)
+#   - Jump indicator activates at fault frequency intervals
+#   - Periodicity map aligns with shaft rotation frequency
+#   - Fault severity should correlate with magnitude of shape concept relevance
