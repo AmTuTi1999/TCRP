@@ -76,25 +76,25 @@ class ConceptScorer(nn.Module):
 
     @property
     def concept_names(self) -> list[str]:
-        """Return label for each column of the concept vector, in output order."""
+        """Return human-readable label for each column of the concept vector."""
         k = self.k_max
         names: list[str] = [
-            "mu_signed",
-            "mu_mag",  # T-01 trend
-            "kappa_signed",
-            "tau",  # T-02 curvature
-            "xi",  # stochasticity
-            "sigma_tilde",
-            "mu_v",
-            "psi",  # T-03c volatility
+            "trend_direction",
+            "trend_strength",  # T-01 trend
+            "curvature",
+            "convexity",  # T-02 curvature
+            "stochasticity",  # GBM vol proxy
+            "volatility",
+            "vol_trend",
+            "vol_ratio",  # T-03c volatility
         ]
         for lag in range(1, k + 1):
-            names.append(f"rho_{lag}")  # T-03d increment ACF
-        names += ["theta_hat", "z"]  # T-03d mean reversion / z-score
-        names += ["b_mu", "b_sigma", "b_mu_tilde"]  # T-03e breaks
-        names += ["varsigma", "kappa4", "j"]  # T-03f shape
+            names.append(f"acf_lag{lag}")  # T-03d increment ACF
+        names += ["mean_reversion", "z_score"]  # T-03d
+        names += ["break_mean", "break_vol", "break_trend"]  # T-03e breaks
+        names += ["skewness", "kurtosis", "jump"]  # T-03f shape
         for p in self.periods:
-            names.append(f"rho_p{p}")  # T-03 periodicity
+            names.append(f"period_{p}")  # T-03 periodicity
         assert (
             len(names) == self.num_concepts
         ), f"concept_names length {len(names)} != num_concepts {self.num_concepts}"

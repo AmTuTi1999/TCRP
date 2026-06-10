@@ -34,6 +34,9 @@ def periodicity_score(s: Tensor, periods: list[int]) -> Tensor:
 
     B, L = s.shape
 
+    if not periods:
+        return s.new_zeros(B, 0) if not squeeze_output else s.new_zeros(0)
+
     # Compute DFT via real FFT (rfft computes only positive frequencies)
     X = torch.fft.rfft(s, dim=1)
     P = X.abs() ** 2  # shape (B, L//2 + 1)

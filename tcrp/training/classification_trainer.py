@@ -2,9 +2,15 @@
 
 Adapts the base TCRP training loop for cross-entropy loss while keeping all
 concept alignment, magnitude, stability, and regularisation terms.
+
+Also provides AdversarialClassificationTrainer, which extends ClassificationTrainer
+with a two-path backward pass and GRL alpha scheduling (same pattern as
+AdversarialTrainer for the forecaster).
 """
 
 from __future__ import annotations
+
+import os
 
 import torch
 import torch.nn as nn
@@ -14,6 +20,10 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
 from tcrp.model.classifier import TCRPClassConfig, TCRPClassifier
+from tcrp.model.tcrp_forecaster.components.adversarial import (
+    AdversarialTCRPClassifier,
+    grl_alpha_schedule,
+)
 from tcrp.model.tcrp_forecaster.components.bottleneck import (
     ConceptProjection,
     concept_magnitude_loss,
@@ -177,8 +187,6 @@ class ClassificationTrainer:
         self, train_loader: DataLoader, val_loader: DataLoader, max_epochs: int = 100
     ) -> None:
         """Fit with early stopping, saving best checkpoint by validation CE."""
-        import os
-
         os.makedirs(os.path.dirname(self.checkpoint_path) or ".", exist_ok=True)
 
         header = (
@@ -196,6 +204,148 @@ class ClassificationTrainer:
 
             print(
                 f"{epoch:6d} | {lb.forecast_loss.item():10.6f} | "
+                f"{val_m['ce']:10.6f} | {val_m['accuracy']:8.4f} | "
+                f"{lb.align_loss.item():10.6f} | {lr:10.2e}"
+            )
+
+            if val_m["ce"] < self.best_val_loss:
+                self.best_val_loss = val_m["ce"]
+                self.epochs_no_improve = 0
+                torch.save(self.model.state_dict(), self.checkpoint_path)
+            else:
+                self.epochs_no_improve += 1
+
+            if self.epochs_no_improve >= self._es_patience:
+                print(f"Early stopping at epoch {epoch}.")
+                break
+
+
+class AdversarialClassificationTrainer(ClassificationTrainer):
+    """Extends ClassificationTrainer with GRL two-path backward and alpha scheduling.
+
+    Path 1: L_ce + L_reg  → decoder, projection, encoder (normal gradient)
+    Path 2: L_align + L_mag + L_stab → projection + GRL → encoder (reversed)
+
+    Alpha ramps from 0 to config.alpha_max after config.warmup_epochs using the
+    DANN sigmoid schedule (grl_alpha_schedule).
+    """
+
+    model: AdversarialTCRPClassifier
+
+    def __init__(
+        self,
+        model: AdversarialTCRPClassifier,
+        config: TCRPClassConfig,
+        **kwargs,
+    ) -> None:
+        """Wrap an AdversarialTCRPClassifier with the two-path adversarial trainer."""
+        super().__init__(model, config, **kwargs)
+
+    def train_epoch(self, loader: DataLoader) -> LossBundle:
+        """One adversarial training epoch — two separate backward passes."""
+        self.model.train()
+        totals = {k: 0.0 for k in ("forecast", "align", "mag", "stab", "reg", "total")}
+        count = 0
+        weights = (
+            self.criterion.class_weights.to(self.device)
+            if self.criterion.class_weights is not None
+            else None
+        )
+
+        for x, y in loader:
+            x, y = x.to(self.device), y.to(self.device)
+            self.optimizer.zero_grad()
+
+            forecast_output, A_align = self.model(x)
+            C = forecast_output.C  # already detached (no_grad in forward)
+
+            L_ce = F.cross_entropy(forecast_output.y_hat, y, weight=weights)
+            L_al = weighted_alignment_loss(A_align, C)
+            L_mag = concept_magnitude_loss(A_align, C)
+            L_stab = stability_loss(A_align, C)
+            L_reg = self.config.lambda2 * torch.norm(
+                self.model.base.projection.linear.weight, p="fro"
+            )
+
+            # Path 1: CE + reg — normal gradients reach encoder
+            (L_ce + L_reg).backward(retain_graph=True)
+
+            # Path 2: alignment — reversed gradient via GRL
+            (
+                self.config.lambda1 * L_al
+                + self.config.lambda4 * L_mag
+                + self.config.lambda3 * L_stab
+            ).backward()
+
+            if self._grad_clip > 0:
+                nn.utils.clip_grad_norm_(self.model.parameters(), self._grad_clip)
+            self.optimizer.step()
+
+            bs = x.shape[0]
+            totals["forecast"] += L_ce.item() * bs
+            totals["align"] += L_al.item() * bs
+            totals["mag"] += L_mag.item() * bs
+            totals["stab"] += L_stab.item() * bs
+            totals["reg"] += L_reg.item() * bs
+            totals["total"] += (
+                L_ce + self.config.lambda1 * L_al + self.config.lambda4 * L_mag + L_reg
+            ).item() * bs
+            count += bs
+
+        def t(k):
+            return torch.tensor(totals[k] / count, device=self.device)
+
+        return LossBundle(
+            forecast_loss=t("forecast"),
+            align_loss=t("align"),
+            mag_loss=t("mag"),
+            stab_loss=t("stab"),
+            reg_loss=t("reg"),
+            total_loss=t("total"),
+        )
+
+    @torch.no_grad()
+    def validate(self, loader: DataLoader) -> dict[str, float]:
+        """Evaluate on validation loader; unpacks the (TCRPOutput, A_align) tuple."""
+        self.model.eval()
+        total_ce, total_correct, count = 0.0, 0, 0
+        for x, y in loader:
+            x, y = x.to(self.device), y.to(self.device)
+            out, _ = self.model(x)
+            total_ce += F.cross_entropy(out.y_hat, y, reduction="sum").item()
+            total_correct += (out.y_hat.argmax(dim=-1) == y).sum().item()
+            count += x.shape[0]
+        return {"ce": total_ce / count, "accuracy": total_correct / count}
+
+    def fit(
+        self, train_loader: DataLoader, val_loader: DataLoader, max_epochs: int = 100
+    ) -> None:
+        """Fit with GRL alpha scheduling and early stopping."""
+        os.makedirs(os.path.dirname(self.checkpoint_path) or ".", exist_ok=True)
+
+        header = (
+            f"\n{'Epoch':>6} | {'alpha':>8} | {'train_CE':>10} | {'val_CE':>10} | "
+            f"{'val_acc':>8} | {'align':>10} | {'lr':>10}"
+        )
+        print(header)
+        print("-" * 80)
+
+        for epoch in range(1, max_epochs + 1):
+            alpha = grl_alpha_schedule(
+                epoch - 1,
+                max_epochs,
+                warmup_epochs=self.config.warmup_epochs,
+                alpha_max=self.config.alpha_max,
+            )
+            self.model.set_alpha(alpha)
+
+            lb = self.train_epoch(train_loader)
+            val_m = self.validate(val_loader)
+            self.scheduler.step(val_m["ce"])
+            lr = self.optimizer.param_groups[0]["lr"]
+
+            print(
+                f"{epoch:6d} | {alpha:8.4f} | {lb.forecast_loss.item():10.6f} | "
                 f"{val_m['ce']:10.6f} | {val_m['accuracy']:8.4f} | "
                 f"{lb.align_loss.item():10.6f} | {lr:10.2e}"
             )

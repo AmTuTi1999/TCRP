@@ -20,11 +20,15 @@ from pathlib import Path
 
 import torch
 
-from tcrp.data.classification_datasets import build_classification_loaders
+from tcrp.dataset.classification_datasets import build_classification_loaders
 from tcrp.eval.classification_metrics import evaluate_all
 from tcrp.eval.concept_class_profile import class_concept_profiles
 from tcrp.model.classifier import TCRPClassConfig, TCRPClassifier
-from tcrp.training.classification_trainer import ClassificationTrainer
+from tcrp.model.tcrp_forecaster.components.adversarial import AdversarialTCRPClassifier
+from tcrp.training.classification_trainer import (
+    AdversarialClassificationTrainer,
+    ClassificationTrainer,
+)
 from tcrp.utils.misc import seed_everything
 
 # ── Experiment registry ──────────────────────────────────────────────────────
@@ -44,7 +48,7 @@ EXPERIMENTS: dict[str, dict] = {
             "batch_size": 128,
             "max_epochs": 150,
             "es_patience": 20,
-            "lr": 1e-3,
+            "lr": 1e-2,
         },
         "weighted_sampling": True,
     },
@@ -86,7 +90,14 @@ EXPERIMENTS: dict[str, dict] = {
     },
     "EXP-C08": {
         "dataset": "FX",
-        "model": {"C": 3, "L": 5, "stride": 1, "periods": [], "k_max": 2},
+        "model": {
+            "C": 3,
+            "L": 6,
+            "stride": 1,
+            "periods": [],
+            "k_max": 2,
+            "tcn_encoder_n_layers": 2,
+        },
         "trainer": {"batch_size": 64, "max_epochs": 200, "es_patience": 30, "lr": 1e-3},
         "weighted_sampling": False,
     },
@@ -173,11 +184,14 @@ def run(
 
     # ── Model ────────────────────────────────────────────────────────────────
     model_kwargs = dict(cfg["model"])
-    if adversarial:
-        model_kwargs["adversarial"] = True
 
     config = TCRPClassConfig(**model_kwargs)
-    model = TCRPClassifier(config)
+    base_model = TCRPClassifier(config)
+
+    if adversarial:
+        model = AdversarialTCRPClassifier(base_model=base_model, alpha=0.0)
+    else:
+        model = base_model
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"  params={n_params:,}  K={config.K}  C={config.C}")
 
@@ -186,7 +200,10 @@ def run(
 
     # ── Trainer ─────────────────────────────────────────────────────────────
     trainer_kw = cfg["trainer"]
-    trainer = ClassificationTrainer(
+    trainer_cls = (
+        AdversarialClassificationTrainer if adversarial else ClassificationTrainer
+    )
+    trainer = trainer_cls(
         model=model,
         config=config,
         lr=trainer_kw["lr"],
@@ -206,8 +223,10 @@ def run(
 
     # ── Test evaluation ──────────────────────────────────────────────────────
     model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=True))
+    # Unwrap adversarial wrapper — eval functions expect TCRPOutput, not a tuple
+    eval_model = model.base if adversarial else model
     metrics = evaluate_all(
-        model,
+        eval_model,
         loaders["test"],
         device=device,
         class_weights=loaders["class_weights"],
@@ -216,7 +235,7 @@ def run(
     # ── Concept profiles ─────────────────────────────────────────────────────
     c_names = concept_names_for(config.periods)
     profiles = class_concept_profiles(
-        model, loaders["test"], concept_names=c_names, device=device
+        eval_model, loaders["test"], concept_names=c_names, device=device
     )
 
     total_elapsed = time.time() - t0

@@ -21,7 +21,7 @@ trainers:
   max_epochs: 200
   early_stopping_patience: 30
   weighted_sampling: false
-  lr: 1.0e-3
+  lr: 1.0e-2
 
 # Diagnostic target (from tasks_classification.md):
 #   - Stochasticity concept CAS ≥ 0.8 required (Hurst ground truth matches concept)

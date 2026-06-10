@@ -283,23 +283,7 @@ class FXRegimeDataset(Dataset):
         stride: int = 1,
     ) -> None:
         """Build sliding windows with Hurst-derived labels from EURUSD tick data."""
-        csv_path = Path(data_root) / "DAT_ASCII_EURUSD_T_202512.csv"
-        if not csv_path.exists():
-            raise FileNotFoundError(f"FX data not found: {csv_path}")
-
-        df = pd.read_csv(
-            csv_path,
-            header=None,
-            names=["datetime", "bid", "ask", "vol"],
-            parse_dates=["datetime"],
-        )
-        df["mid"] = (df["bid"] + df["ask"]) / 2.0
-        df["datetime"] = pd.to_datetime(
-            df["datetime"], format="%Y%m%d %H%M%S%f", errors="coerce"
-        )
-        df = df.dropna(subset=["datetime"])
-        daily = df.set_index("datetime")["mid"].resample("D").last().dropna()
-        log_ret = np.log(daily / daily.shift(1)).dropna().values.astype(np.float32)
+        log_ret = self._load_log_returns(data_root, hurst_window)
 
         windows, labels = _build_hurst_windows(
             log_ret, self.T, stride, hurst_window, hurst_hi, hurst_lo
@@ -332,6 +316,38 @@ class FXRegimeDataset(Dataset):
 
         counts = np.bincount(labs, minlength=self.C).astype(np.float32)
         self.class_weights = torch.from_numpy(1.0 / np.where(counts == 0, 1.0, counts))
+
+    def _load_log_returns(self, data_root: str | Path, hurst_window: int) -> np.ndarray:
+        """Load daily log-returns from tick CSV; fall back to exchange_rate.csv."""
+        min_rows = self.T + hurst_window // 2 + 2
+        csv_path = Path(data_root) / "DAT_ASCII_EURUSD_T_202512.csv"
+        if csv_path.exists():
+            df = pd.read_csv(
+                csv_path,
+                header=None,
+                names=["datetime", "bid", "ask", "vol"],
+                parse_dates=["datetime"],
+            )
+            df["mid"] = (df["bid"] + df["ask"]) / 2.0
+            df["datetime"] = pd.to_datetime(
+                df["datetime"], format="%Y%m%d %H%M%S%f", errors="coerce"
+            )
+            df = df.dropna(subset=["datetime"])
+            daily = df.set_index("datetime")["mid"].resample("D").last().dropna()
+            log_ret = np.log(daily / daily.shift(1)).dropna().values.astype(np.float32)
+            if len(log_ret) >= min_rows:
+                return log_ret
+
+        # Tick data insufficient — fall back to exchange_rate.csv (column 0: AUD/USD).
+        # This file ships with the repo and covers 1990-2010 (~7500 daily rows).
+        fallback = DATA_ROOT / "exchange_rate.csv"
+        if not fallback.exists():
+            raise FileNotFoundError(
+                f"FX tick data at {csv_path} has fewer than {min_rows} daily rows "
+                f"and fallback {fallback} was not found."
+            )
+        prices = pd.read_csv(fallback).iloc[:, 1].values.astype(np.float32)
+        return np.log(prices[1:] / prices[:-1])
 
     def __len__(self) -> int:
         """Return number of samples."""

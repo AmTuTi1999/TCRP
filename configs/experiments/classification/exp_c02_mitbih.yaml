@@ -19,6 +19,7 @@ trainers:
   max_epochs: 150
   early_stopping_patience: 20
   weighted_sampling: true
+  lr: 1.0e-2
 
 # Expected concept findings (for reference):
 #   - V class: wide QRS → high monotonicity, high jump indicator

@@ -27,7 +27,8 @@
       "Bash(pre-commit install *)",
       "Bash(pre-commit run *)",
       "Bash(rm /workspaces/TCRP/.pre-commit-config.yaml && pre-commit install -c /workspaces/TCRP/pre-commit-config.yaml)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(poetry add *)"
     ],
     "additionalDirectories": [
       "/tmp",

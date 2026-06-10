@@ -26,6 +26,7 @@ Classification only:
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +34,7 @@ import numpy as np
 import torch
 from omegaconf import DictConfig
 
+from tcrp.analysis.narrator import TCRPNarrator
 from tcrp.analysis.tcrp_analysis import TCRPAnalyser, verify_conservation
 from tcrp.analysis.visualise import plot_explanation
 from tcrp.dataset.datasets import DATASET_META
@@ -121,6 +123,7 @@ def _plot_samples(
     label: str | None = None,
     highlight_seg: int | None = None,
     is_cls: bool = False,
+    narrator: TCRPNarrator | None = None,
 ) -> None:
     test_ds = test_loader.dataset
     n_test = len(test_ds)
@@ -146,6 +149,14 @@ def _plot_samples(
             highlight_seg=highlight_seg,
             label=label,
         )
+        if narrator is not None:
+            narrative = narrator.narrate(
+                vis_expl,
+                concept_names,
+                sample_idx=vis_idx,
+                h_star=h_star if not is_cls else None,
+            )
+            print(f"\n  [Narrator — sample {ds_idx}]\n  {narrative}\n")
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -237,6 +248,9 @@ def _analyse_forecast(
         / _now.strftime("%Y-%m-%d")
         / _now.strftime("%H-%M-%S")
     )
+    narrator = None
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        narrator = TCRPNarrator(dataset=dataset_cfg.dataset)
     _plot_samples(
         analyser,
         test_loader,
@@ -248,6 +262,7 @@ def _analyse_forecast(
         h_star=h_star,
         label=label,
         highlight_seg=highlight_seg,
+        narrator=narrator,
     )
 
     return {
@@ -280,7 +295,7 @@ def _analyse_cls(
     highlight_seg: int | None,
     _now: datetime,
 ) -> dict:
-    from tcrp.data.classification_datasets import build_classification_loaders
+    from tcrp.dataset.classification_datasets import build_classification_loaders
     from tcrp.model.classifier import TCRPClassifier
 
     from .config import tcrp_class_config_from_hydra
@@ -353,6 +368,9 @@ def _analyse_cls(
         / _now.strftime("%Y-%m-%d")
         / _now.strftime("%H-%M-%S")
     )
+    narrator = None
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        narrator = TCRPNarrator(dataset=dataset_cfg.dataset)
     _plot_samples(
         analyser,
         test_loader,
@@ -365,6 +383,7 @@ def _analyse_cls(
         label=label,
         highlight_seg=highlight_seg,
         is_cls=True,
+        narrator=narrator,
     )
 
     return {

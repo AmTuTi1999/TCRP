@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+from tcrp.model.classifier import TCRPClassifier
 from tcrp.model.tcrp_forecaster.forecaster import TCRPForecaster, TCRPOutput
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,61 @@ def grl_alpha_schedule(
 # ---------------------------------------------------------------------------
 # T*-03  Adversarial TCRP model wrapper
 # ---------------------------------------------------------------------------
+
+
+class AdversarialTCRPClassifier(nn.Module):
+    """Wraps TCRPClassifier with a GRL on the alignment backward path.
+
+    Exposes the same forward-pass outputs as TCRPForecaster so all downstream
+    analysis (T-17 TCRP analysis pass, T-29–T-35 diagnostics) can be applied
+    without modification.
+
+    forward() returns (TCRPOutput, A_align):
+    - TCRPOutput: standard output via the forecast path (no GRL)
+    - A_align:    concept activations computed through the GRL for L_align
+
+    The caller uses these for separate backward passes:
+        L_forecast.backward(retain_graph=True)   # normal gradient to encoder
+        L_align.backward()                       # reversed gradient to encoder
+    """
+
+    def __init__(self, base_model: TCRPClassifier, alpha: float = 0.0):
+        """Initialize AdversarialTCRPClassifier1 wrapping a base model with a GRL."""
+        super().__init__()
+        self.base = base_model
+        self.grl = GRLLayer(alpha=alpha)
+
+    def set_alpha(self, alpha: float) -> None:
+        """Update the GRL reversal strength alpha."""
+        self.grl.alpha = alpha
+
+    def forward(self, x: Tensor) -> tuple[TCRPOutput, Tensor]:
+        """Run the dual forecast and alignment forward passes, returning (TCRPOutput, A_align)."""
+        if x.dim() != 2:
+            raise ValueError(f"Expected input shape (B, T), got {tuple(x.shape)}")
+
+        B, T = x.shape
+        segs = self.base.segmenter(x)  # (B, N, L)
+        N = segs.shape[1]
+        z = self.base.encoder(segs)  # (B, N, d)
+
+        # --- Forecast path (no GRL) ---
+        A_f = self.base.projection(z)  # (B, N, K)
+        h, eta = self.base.pool(A_f)
+        y_hat = self.base.decoder(h)  # (B, C) class logits
+
+        # --- Analytic concept scores (detached — no gradient) ---
+        with torch.no_grad():
+            flat_segs = segs.reshape(-1, segs.shape[-1])
+            C_flat = self.base.scorer(flat_segs)
+            C = C_flat.view(B, N, self.base.config.K)
+
+        # --- Alignment path (through GRL — gradient reversed on backward) ---
+        z_grl = self.grl(z)  # identity forward, -alpha on backward
+        A_align = self.base.projection(z_grl)  # (B, N, K)
+
+        forecast_output = TCRPOutput(y_hat=y_hat, h=h, A=A_f, C=C, eta=eta)
+        return forecast_output, A_align
 
 
 class AdversarialTCRPForecaster(nn.Module):

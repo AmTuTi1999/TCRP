@@ -32,22 +32,24 @@ from tcrp.analysis.tcrp_analysis import TCRPExplanation
 
 # ── concept colour palette ─────────────────────────────────────────────────────
 _GROUP_COLORS: dict[str, str] = {
-    "mu_signed": "#1f77b4",
-    "mu_mag": "#aec7e8",
-    "kappa_signed": "#2ca02c",
-    "tau": "#98df8a",
-    "xi": "#9467bd",
-    "sigma_tilde": "#ff7f0e",
-    "mu_v": "#ffbb78",
-    "psi": "#d62728",
-    "theta_hat": "#8c564b",
-    "z": "#c49c94",
-    "b_mu_tilde": "#bcbd22",
-    "b_mu": "#e6e61a",
-    "b_sigma": "#dbdb8d",
-    "varsigma": "#7f7f7f",
-    "kappa4": "#c7c7c7",
-    "j": "#aaaaaa",
+    "trend_direction": "#1f77b4",
+    "trend_strength": "#aec7e8",
+    "curvature": "#2ca02c",
+    "convexity": "#98df8a",
+    "stochasticity": "#9467bd",
+    "volatility": "#ff7f0e",
+    "vol_trend": "#ffbb78",
+    "vol_ratio": "#d62728",
+    "acf_lag": "#8c564b",
+    "mean_reversion": "#e377c2",
+    "z_score": "#c49c94",
+    "break_mean": "#bcbd22",
+    "break_vol": "#dbdb8d",
+    "break_trend": "#e6e61a",
+    "skewness": "#7f7f7f",
+    "kurtosis": "#c7c7c7",
+    "jump": "#aaaaaa",
+    "period_": "#17becf",
 }
 _FALLBACK = plt.cm.tab20(np.linspace(0, 1, 20))
 
@@ -613,6 +615,74 @@ def plot_concept_signal_vs_usage(
     _save(fig, out_dir / "plot6_signal_vs_usage.png")
 
 
+# ── Plot 7: concept values across segments (line plot) ───────────────────────
+
+
+def plot_concept_lines(
+    C: np.ndarray,
+    concept_names: list[str],
+    run_id: str,
+    h_star: int,
+    out_dir: Path,
+    top_k: int = 10,
+    label: str | None = None,
+) -> None:
+    """Line plot of analytic concept values C[n, k] across segments.
+
+    One line per concept; x-axis is segment index n.  Only the top-k concepts
+    by mean absolute value are drawn individually — the rest are omitted to keep
+    the chart readable.
+
+    Args:
+        C:             Concept activations (N, K).
+        concept_names: Ordered concept name strings.
+        run_id:        String used in titles.
+        h_star:        Horizon step / class index (used in title when label is None).
+        out_dir:       Output directory.
+        top_k:         Maximum number of concepts to draw individually.
+        label:         Optional annotation string appended to the plot title.
+    """
+    N, K = C.shape
+    seg_idx = np.arange(N)
+    tag = label if label is not None else f"h*={h_star}"
+
+    mean_abs = np.abs(C).mean(axis=0)
+    top_idx = np.argsort(mean_abs)[::-1][:top_k]
+
+    fig, ax = plt.subplots(figsize=(max(8, N * 0.15 + 2), 4))
+    fig.suptitle(
+        f"{run_id} · concept values across segments  ({tag}"
+        + (f", top {top_k} of {K}" if K > top_k else "")
+        + ")",
+        fontsize=11,
+    )
+
+    for k in top_idx:
+        color = _concept_color(concept_names[k], int(k))
+        ax.plot(
+            seg_idx,
+            C[:, k],
+            lw=1.2,
+            color=color,
+            label=concept_names[k],
+            alpha=0.85,
+        )
+
+    ax.axhline(0, color="black", lw=0.5, ls="--")
+    ax.set_xlabel("Segment  n", fontsize=9)
+    ax.set_ylabel("Concept value  C[n, k]", fontsize=9)
+    ax.legend(
+        fontsize=7,
+        ncol=1,
+        loc="upper left",
+        bbox_to_anchor=(1.01, 1.0),
+        framealpha=0.6,
+    )
+    ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
+
+    _save(fig, out_dir / "plot7_concept_lines.png")
+
+
 # ── High-level entry point ─────────────────────────────────────────────────────
 
 
@@ -687,5 +757,6 @@ def plot_explanation(
     plot_concept_signal_vs_usage(
         C, R_A, concept_names, run_id, h_star, out_dir, label=label
     )
+    plot_concept_lines(C, concept_names, run_id, h_star, out_dir, label=label)
 
     return out_dir
