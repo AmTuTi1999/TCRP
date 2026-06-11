@@ -1,0 +1,4 @@
+run_name,dataset,strategy,T,H,lambda4,adversarial,test_mse,test_mae,test_rmse,val_mse,elapsed_s
+ExchangeRate_tcrp_T336_H96_standard,ExchangeRate,standard,336,96,0.0,False,0.005208,0.056508,0.072169,0.003326,1613.0
+ExchangeRate_tcrp_T336_H96_regularized,ExchangeRate,regularized,336,96,0.1,False,0.004335,0.05629,0.06584,0.003677,1278.3
+ExchangeRate_tcrp_T336_H96_adversarial,ExchangeRate,adversarial,336,96,0.1,True,0.004363,0.055833,0.066052,0.004073,1991.5

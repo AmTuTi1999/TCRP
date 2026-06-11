@@ -1,1 +1,4 @@
 tcrp/data/**/*.csv filter=lfs diff=lfs merge=lfs -text
+tcrp/data/**/*.arff filter=lfs diff=lfs merge=lfs -text
+tcrp/data/**/*.ts filter=lfs diff=lfs merge=lfs -text
+tcrp/data/**/*.txt filter=lfs diff=lfs merge=lfs -text

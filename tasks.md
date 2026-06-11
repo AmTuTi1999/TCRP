@@ -1,7 +1,7 @@
 # TCRP Implementation Tasks
 
-Temporal Concept Relevance Propagation — forecasting architecture.  
-Paper reference: `tcrp_v3.tex`.  
+Temporal Concept Relevance Propagation — forecasting architecture.
+Paper reference: `tcrp_v3.tex`.
 Stack: Python 3.11, PyTorch 2.x, numpy, scipy.
 
 ---
@@ -50,16 +50,19 @@ tcrp/
 ---
 
 ## Phase 1 — Analytic Concept Scores
-> `tcrp/concepts/`  
-> These are pure functions: no learned parameters, no PyTorch modules.  
-> All inputs are raw numpy arrays or torch tensors of shape `(L,)`.  
+
+> `tcrp/concepts/`
+> These are pure functions: no learned parameters, no PyTorch modules.
+> All inputs are raw numpy arrays or torch tensors of shape `(L,)`.
 > All outputs must be differentiable w.r.t. the input values.
 
 ### T-01 · Soft monotonicity score
-**File:** `concepts/monotonicity.py`  
+
+**File:** `concepts/monotonicity.py`
 **Paper:** Def. 1, Eq. 1–2
 
 Implement `soft_monotonicity(s: Tensor, alpha: float = 5.0) -> Tensor`:
+
 - Compute first differences `delta[l] = s[l] - s[l-1]` for `l = 1…L-1`
 - Return `mu = sigmoid(alpha * delta).mean()` — shape `()`
 - Return `mu_signed = 2 * mu - 1` — range `(-1, 1)`
@@ -69,10 +72,12 @@ Implement `soft_monotonicity(s: Tensor, alpha: float = 5.0) -> Tensor`:
 - Verify: gradient w.r.t. `s` is everywhere finite and non-zero (use `torch.autograd.gradcheck`)
 
 ### T-02 · Soft curvature score and observed tendency
-**File:** `concepts/curvature.py`  
+
+**File:** `concepts/curvature.py`
 **Paper:** Def. 2, Eq. 3–4
 
 Implement `soft_curvature(s: Tensor, beta: float = 5.0) -> Tensor`:
+
 - Compute second differences `delta2[l] = delta[l+1] - delta[l]` for `l = 1…L-2`
 - Return `kappa_signed = 2 * sigmoid(beta * delta2).mean() - 1` — range `(-1, 1)`
 - Return `tau = mu_signed * kappa_signed` — observed tendency, range `(-1, 1)`
@@ -80,10 +85,12 @@ Implement `soft_curvature(s: Tensor, beta: float = 5.0) -> Tensor`:
 - Verify four-regime table (Table 1 in paper): accelerating rise → `tau > 0`; decelerating rise → `tau < 0`; accelerating fall → `tau < 0`; decelerating fall → `tau > 0`
 
 ### T-03 · Periodicity score
-**File:** `concepts/periodicity.py`  
+
+**File:** `concepts/periodicity.py`
 **Paper:** Def. 3, Eq. 5
 
 Implement `periodicity_score(s: Tensor, periods: list[int]) -> Tensor`:
+
 - Compute DFT via `torch.fft.rfft(s)`; power spectrum `P[nu] = |X[nu]|^2`
 - Total non-DC power = `P[1:].sum()`; DC component is `P[0]` — excluded from denominator
 - For each `p` in `periods`, find bin `nu_p = round(L / p)`, return `rho_p = P[nu_p] / total_power`
@@ -93,7 +100,8 @@ Implement `periodicity_score(s: Tensor, periods: list[int]) -> Tensor`:
 - Note: `round(L / p)` must be clamped to `[1, L//2]` to stay in valid DFT range
 
 ### T-03b · Stochasticity score (Brownian motion similarity)
-**File:** `concepts/stochasticity.py`  
+
+**File:** `concepts/stochasticity.py`
 **Paper:** Def. 4, Eqs. 10–13
 
 Implement `stochasticity_score(s: Tensor, gamma: float = 0.5, weights: tuple = (1/3, 1/3, 1/3)) -> Tensor` returning scalar `xi` in `[0, 1]`.
@@ -102,7 +110,8 @@ The score is a weighted geometric mean of three sub-scores, each testing one pro
 
 **Sub-score (a): Hurst similarity `phi_H`**
 
-A standard Brownian motion has Hurst exponent H = 0.5.  Estimate H via variance scaling:
+A standard Brownian motion has Hurst exponent H = 0.5. Estimate H via variance scaling:
+
 - Compute first differences `delta = s[1:] - s[:-1]`, shape `(L-1,)`
 - Split into first half `delta[:L//2]` and full sequence `delta`
 - `H_hat = 0.5 + (log(var(delta[:L//2])) - log(var(delta))) / (2 * log(2))`
@@ -114,6 +123,7 @@ A standard Brownian motion has Hurst exponent H = 0.5.  Estimate H via variance 
 **Sub-score (b): Spectral flatness `phi_flat`**
 
 Brownian motion increments are white noise → flat power spectrum:
+
 - Compute power spectrum of increments `P = |fft(delta)|^2`, shape `(L//2,)` (positive freqs only)
 - Clamp `P` to minimum `1e-10` before log to avoid `-inf`
 - Geometric mean of spectrum: `G = exp(mean(log(P)))`
@@ -124,6 +134,7 @@ Brownian motion increments are white noise → flat power spectrum:
 **Sub-score (c): Increment Gaussianity `phi_kurt`**
 
 Brownian increments are i.i.d. Gaussian → excess kurtosis = 0:
+
 - Compute excess kurtosis of `delta`: `kurt4 = mean((delta - mean(delta))^4) / var(delta)^2 - 3`
 - `phi_kurt = exp(-gamma * |kurt4|)` — range `(0, 1]`
 - Degenerate case: if `var(delta) < 1e-8`, return `phi_kurt = 0.0`
@@ -131,11 +142,13 @@ Brownian increments are i.i.d. Gaussian → excess kurtosis = 0:
 - Heavy-tailed noise or impulses → `|kurt4| >> 0` → `phi_kurt → 0`
 
 **Composite score:**
+
 - `xi = phi_H^w1 * phi_flat^w2 * phi_kurt^w3`
 - Compute in log space for numerical stability: `log_xi = w1*log(phi_H + eps) + w2*log(phi_flat + eps) + w3*log(phi_kurt + eps)`, then `xi = exp(log_xi)`
 - Clamp final `xi` to `[0, 1]`
 
 **Tests:**
+
 - Brownian motion simulation (use `torch.cumsum(torch.randn(L), dim=0)`) → `xi` should be consistently above 0.5 (not necessarily close to 1 due to finite-sample variance)
 - Perfectly linear segment → `phi_H → 1` (H ≈ 1) → `phi_H ≈ 0` → `xi ≈ 0`
 - Pure sinusoid → `phi_flat ≈ 0` → `xi ≈ 0`
@@ -144,22 +157,26 @@ Brownian increments are i.i.d. Gaussian → excess kurtosis = 0:
 - Verify geometric mean property: if any one sub-score is near 0, `xi` must also be near 0 regardless of others
 
 ### T-03c · Volatility concepts
-**File:** `concepts/volatility.py`  
+
+**File:** `concepts/volatility.py`
 **Paper:** Def. 5, Eqs. 14–16
 
 Implement `volatility_scores(s: Tensor, train_std: float = 1.0) -> dict`:
 
 **Realised volatility `sigma_tilde`:**
+
 - `sigma = sqrt(mean(delta^2))` where `delta = s[1:] - s[:-1]`
 - Normalise: `sigma_tilde = sigma / train_std` — dimensionless, range `[0, ∞)`
 - `train_std` passed in from dataset statistics computed on training set only
 
 **Volatility trend `mu_v`:**
+
 - Compute `v = |delta|` — absolute increment sequence, shape `(L-1,)`
 - Apply `soft_monotonicity(v, alpha)` from T-01 → returns `mu_v_signed ∈ (-1, 1)`
 - `mu_v > 0`: volatility rising (entering high-vol regime); `mu_v < 0`: falling
 
 **ARCH clustering `psi`:**
+
 - `psi = pearson_corr(delta[:-1]^2, delta[1:]^2)` — lag-1 autocorrelation of squared increments
 - Implement as: `d2 = delta^2; psi = corr(d2[:-1], d2[1:])` via `torch`-differentiable Pearson
 - Range `(-1, 1)`; degenerate case `var(d2) < 1e-8` → return `psi = 0.0`
@@ -167,6 +184,7 @@ Implement `volatility_scores(s: Tensor, train_std: float = 1.0) -> dict`:
 Returns dict `{sigma_tilde, mu_v, psi}`.
 
 Tests:
+
 - `test_realvol_scale`: doubling all increments doubles `sigma`
 - `test_voltend_rising`: GARCH-simulated increasing-variance path → `mu_v > 0` on average
 - `test_arch_clustering`: squared increments with positive ACF → `psi > 0`
@@ -175,29 +193,34 @@ Tests:
 ---
 
 ### T-03d · Autocorrelation concepts
-**File:** `concepts/autocorrelation.py`  
+
+**File:** `concepts/autocorrelation.py`
 **Paper:** Def. 6, Eqs. 17–19
 
 Implement `autocorrelation_scores(s: Tensor, k_max: int = 2) -> dict`:
 
 **Lag-k increment ACF `rho_k`:**
+
 - `delta = s[1:] - s[:-1]`, shape `(L-1,)`
 - For each `k in 1..k_max`: `rho_k = pearson_corr(delta[:-k], delta[k:])` — range `(-1, 1)`
 - Return as tensor of shape `(k_max,)` — differentiable through Pearson
 
 **Mean-reversion speed `theta_hat`:**
+
 - `theta_hat = -corr(s[:-1], delta) * std(delta) / (std(s[:-1]) + eps)`
 - This is the OLS coefficient from regressing `delta` on `s[:-1]` (Ornstein-Uhlenbeck estimator)
 - Range approximately `[0, ∞)` for mean-reverting; clamp output to `[-2, 2]` for stability
 - `theta_hat > 0`: mean-reverting; `theta_hat ≤ 0`: trending or random walk
 
 **Z-score `z`:**
+
 - `z = (s[-1] - s.mean()) / (s.std() + eps)` — last observation relative to within-segment mean
 - Clamp to `[-3, 3]`
 
 Returns dict `{rho: Tensor(k_max), theta_hat, z}`.
 
 Tests:
+
 - `test_rho_iid`: i.i.d. series → all `|rho_k| < 0.15` on average over 500 trials
 - `test_rho_momentum`: AR(1) with coefficient 0.8 → `rho_1 ≈ 0.8`
 - `test_theta_ornstein_uhlenbeck`: OU path with known `theta` → estimated `theta_hat` within 20% of true value over 1000-point path
@@ -207,7 +230,8 @@ Tests:
 ---
 
 ### T-03e · Structural break concepts
-**File:** `concepts/breaks.py`  
+
+**File:** `concepts/breaks.py`
 **Paper:** Def. 7, Eqs. 20–22
 
 Implement `break_scores(s: Tensor) -> dict`:
@@ -215,22 +239,26 @@ Implement `break_scores(s: Tensor) -> dict`:
 Split segment into `s1 = s[:L//2]`, `s2 = s[L//2:]`.
 
 **Mean break `b_mu`:**
+
 - `sigma_hat = std(delta)` where `delta = s[1:] - s[:-1]` — full-window increment std
 - `b_mu = tanh(|mean(s2) - mean(s1)| / (sigma_hat + eps))` — range `[0, 1)`
 - Degenerate: if `sigma_hat < 1e-8` → `b_mu = 0.0`
 
 **Variance break `b_sigma`:**
+
 - `sigma1 = std(s1[1:] - s1[:-1])`, `sigma2 = std(s2[1:] - s2[:-1])`
 - `b_sigma = tanh(|log(sigma2 / (sigma1 + eps))|)` — range `[0, 1)`
 - Degenerate: if `sigma1 < 1e-8 or sigma2 < 1e-8` → `b_sigma = 0.0`
 
 **Slope break `b_mu_tilde`:**
+
 - Apply `soft_monotonicity` to `s1` → `mu1_signed`; to `s2` → `mu2_signed`
 - `b_mu_tilde = (mu2_signed - mu1_signed) / 2.0` — range `(-1, 1)`
 
 Returns dict `{b_mu, b_sigma, b_mu_tilde}`.
 
 Tests:
+
 - `test_level_shift`: step function (constant then shifted by 5σ) → `b_mu > 0.8`
 - `test_no_break_flat`: constant segment → all break scores ≈ 0
 - `test_vol_break`: low-vol first half, high-vol second half → `b_sigma > 0.5`
@@ -240,7 +268,8 @@ Tests:
 ---
 
 ### T-03f · Distributional shape concepts
-**File:** `concepts/shape.py`  
+
+**File:** `concepts/shape.py`
 **Paper:** Def. 8, Eqs. 23–25
 
 Implement `shape_scores(s: Tensor, gamma_j: float = 2.0, jump_threshold: float = 3.0) -> dict`:
@@ -248,16 +277,19 @@ Implement `shape_scores(s: Tensor, gamma_j: float = 2.0, jump_threshold: float =
 `delta = s[1:] - s[:-1]`; `delta_c = delta - delta.mean()` (centred)
 
 **Signed skewness `varsigma`:**
+
 - `varsigma = mean(delta_c^3) / (std(delta)^3 + eps)`
 - Clamp to `[-3, 3]`
 - Negative: crash risk; positive: right tail / lottery profile
 
 **Signed excess kurtosis `kappa4`:**
+
 - `kappa4 = mean(delta_c^4) / (std(delta)^4 + eps) - 3`
 - Clamp to `[-3, 10]` (excess kurtosis rarely negative beyond -3)
 - Positive: heavy tails; negative: thin tails
 
 **Soft jump indicator `j`:**
+
 - `j = sigmoid(gamma_j * (max(|delta|) - jump_threshold * std(delta)))`
 - Range `(0, 1)`; `j > 0.5` when max increment exceeds `3σ`
 - Differentiable through `sigmoid` and `max` (use `delta.abs().max()`)
@@ -265,6 +297,7 @@ Implement `shape_scores(s: Tensor, gamma_j: float = 2.0, jump_threshold: float =
 Returns dict `{varsigma, kappa4, j}`.
 
 Tests:
+
 - `test_skew_negative`: right-clipped distribution → `varsigma < 0`
 - `test_skew_gaussian`: Gaussian increments → `|varsigma| < 0.3` on average
 - `test_kurtosis_gaussian`: Gaussian → `|kappa4| < 0.5` on average over 500 trials
@@ -275,8 +308,9 @@ Tests:
 
 ---
 
-### T-04 · Full temporal concept vector  *(updated)*
-**File:** `concepts/concept_vector.py`  
+### T-04 · Full temporal concept vector _(updated)_
+
+**File:** `concepts/concept_vector.py`
 **Paper:** Eq. 26, Table 2
 
 Implement `ConceptScorer(alpha, beta, periods, gamma=0.5, gamma_j=2.0, k_max=2, jump_threshold=3.0, train_std=1.0)` as `nn.Module` with no learned parameters:
@@ -301,16 +335,18 @@ Implement `ConceptScorer(alpha, beta, periods, gamma=0.5, gamma_j=2.0, k_max=2, 
 - All columns differentiable w.r.t. `s`
 - `gradcheck` on full vector in double precision with default K=22
 
-
 ---
 
 ## Phase 2 — Segmentation
+
 > `tcrp/model/segmentation.py`
 
 ### T-05 · Sliding window segmentation
+
 **Paper:** Eq. 7 (background notation)
 
 Implement `Segmenter(L: int, stride: int)` as an `nn.Module`:
+
 - `forward(x: Tensor) -> Tensor` where `x` has shape `(B, T)` (univariate)
 - Returns segments of shape `(B, N, L)` where `N = floor((T - L) / stride) + 1`
 - Use `x.unfold(dimension=1, size=L, step=stride)` — no data copy
@@ -322,21 +358,26 @@ Implement `Segmenter(L: int, stride: int)` as an `nn.Module`:
 ---
 
 ## Phase 3 — Shared Temporal Encoder
+
 > `tcrp/model/encoder.py`
 
 ### T-06 · Dilated causal TCN block
+
 **Paper:** Appendix B (encoder description)
 
 Implement `CausalDilatedBlock(in_ch, out_ch, kernel_size, dilation)` as `nn.Module`:
+
 - Causal padding: `pad = (kernel_size - 1) * dilation`; apply left-only via `F.pad(x, (pad, 0))`
 - Conv1d → WeightNorm → ReLU → Conv1d → WeightNorm → ReLU
 - Residual connection with `1×1` projection if `in_ch != out_ch`
 - No future timesteps may be seen: verify causality by checking that `output[:, :, t]` does not depend on `input[:, :, t+1:]`
 
 ### T-07 · Stacked TCN encoder
+
 **Paper:** Appendix B
 
 Implement `TCNEncoder(in_ch=1, hidden=64, n_layers=4, kernel_size=3)` as `nn.Module`:
+
 - Stack four `CausalDilatedBlock` with dilations `[1, 2, 4, 8]`
 - Final mean-pool over the time dimension: `z = out.mean(dim=-1)` → shape `(B*N, d)`
 - `forward(segments: Tensor) -> Tensor`:
@@ -348,12 +389,15 @@ Implement `TCNEncoder(in_ch=1, hidden=64, n_layers=4, kernel_size=3)` as `nn.Mod
 ---
 
 ## Phase 4 — Concept Projection Bottleneck
+
 > `tcrp/model/bottleneck.py`
 
 ### T-08 · Linear concept projection
+
 **Paper:** Eq. 8
 
 Implement `ConceptProjection(d: int, K: int)` as `nn.Module`:
+
 - Single `nn.Linear(d, K, bias=True)` — weight matrix rows are the concept directions `w_k`
 - `forward(Z: Tensor) -> Tensor`:
   - Input `Z` shape `(B, N, d)`
@@ -362,9 +406,11 @@ Implement `ConceptProjection(d: int, K: int)` as `nn.Module`:
 - After forward, `A` replaces `Z` for all downstream computation — enforce this by not returning `Z`
 
 ### T-09 · Concept alignment loss
+
 **Paper:** Eq. 9
 
 Implement `alignment_loss(A: Tensor, C: Tensor) -> Tensor`:
+
 - `A` shape `(B, N, K)` — learned concept activations
 - `C` shape `(B, N, K)` — analytic concept scores from `ConceptScorer`
 - For each concept `k`, compute Pearson correlation between `A[:,:,k].flatten()` and `C[:,:,k].flatten()` across the batch
@@ -376,12 +422,15 @@ Implement `alignment_loss(A: Tensor, C: Tensor) -> Tensor`:
 ---
 
 ## Phase 5 — Temporal Concept Aggregation
+
 > `tcrp/model/aggregation.py`
 
 ### T-10 · Additive attention pooling
+
 **Paper:** Eq. 10
 
 Implement `ConceptAttentionPool(K: int, hidden: int = 32)` as `nn.Module`:
+
 - Attention energy: `e_n = v^T tanh(U @ A_n)` where `U: (hidden, K)`, `v: (hidden,)`
 - Attention weights: `eta = softmax(e)` over the `N` dimension — shape `(B, N)`
 - Pooled vector: `h = sum_n eta_n * A_n` — shape `(B, K)`
@@ -393,12 +442,15 @@ Implement `ConceptAttentionPool(K: int, hidden: int = 32)` as `nn.Module`:
 ---
 
 ## Phase 6 — Horizon Decoder
+
 > `tcrp/model/decoder.py`
 
 ### T-11 · Linear horizon decoder
+
 **Paper:** Eq. 11
 
 Implement `HorizonDecoder(K: int, H: int)` as `nn.Module`:
+
 - Single `nn.Linear(K, H, bias=True)` — matrix `Theta`, shape `(H, K)`
 - `forward(h: Tensor) -> Tensor`:
   - Input `h` shape `(B, K)`
@@ -407,9 +459,11 @@ Implement `HorizonDecoder(K: int, H: int)` as `nn.Module`:
 - No non-linearity — linearity is the paper's deliberate design constraint
 
 ### T-12 · Probabilistic decoder (Gaussian)
+
 **Paper:** §4.7
 
 Implement `GaussianDecoder(K: int, H: int)` as `nn.Module`:
+
 - Two linear heads: `mu_head: Linear(K, H)` and `log_sigma_head: Linear(K, H)`
 - `forward(h) -> tuple[Tensor, Tensor]`: returns `(mu, sigma)` where `sigma = exp(log_sigma).clamp(min=1e-6)`
 - `nll_loss(mu, sigma, y_true) -> Tensor`: negative Gaussian log-likelihood
@@ -418,9 +472,11 @@ Implement `GaussianDecoder(K: int, H: int)` as `nn.Module`:
 ---
 
 ## Phase 7 — Full TCRP Model
+
 > `tcrp/model/tcrp.py`
 
 ### T-13 · TCRP forecaster (assembly)
+
 **Paper:** §4
 
 Implement `TCRPForecaster(config: TCRPConfig)` as `nn.Module`:
@@ -448,6 +504,7 @@ class TCRPConfig:
 ```
 
 Forward pass:
+
 1. `Segmenter` → `segments (B, N, L)`
 2. `TCNEncoder` → `Z (B, N, d)`
 3. `ConceptProjection` → `A (B, N, K)`
@@ -456,21 +513,26 @@ Forward pass:
 6. `HorizonDecoder` → `y_hat (B, H)`
 
 `forward` returns a `TCRPOutput` named tuple:
+
 ```python
 TCRPOutput(y_hat, h, A, C, eta)
 ```
+
 All fields needed downstream for loss computation and analysis.
 
 ---
 
 ## Phase 8 — Training
+
 > `tcrp/training/`
 
 ### T-14 · Loss functions
-**File:** `training/losses.py`  
+
+**File:** `training/losses.py`
 **Paper:** Eq. 12
 
 Implement `TCRPLoss(lambda1: float, lambda2: float, lambda3: float = 0.01)`:
+
 - `forecast_loss`: `F.mse_loss(y_hat, y_true)`
 - `align_loss`: call `alignment_loss(A, C)` from T-09
   - **Critical**: `C` must be detached (`C = C.detach()`) before loss computation —
@@ -486,24 +548,29 @@ Implement `TCRPLoss(lambda1: float, lambda2: float, lambda3: float = 0.01)`:
   `LossBundle(total, forecast, align, stability, reg)`
 
 ### T-15 · Trainer
+
 **File:** `training/trainer.py`
 
 Implement `Trainer(model, config)`:
 
 **Optimiser and scheduler:**
+
 - Adam optimiser, lr `1e-3`, weight decay 0 (L2 applied manually via `reg_loss`)
 - `ReduceLROnPlateau` on validation forecast MSE, patience 5, factor 0.5
 
 **Lambda-1 warm-up schedule:**
+
 ```python
 def lambda1_schedule(epoch: int, warmup: int = 20, target: float = 0.1) -> float:
     return target * min(epoch / warmup, 1.0)
 ```
+
 During warm-up the model trains as a pure forecaster; alignment pressure is
 introduced gradually to avoid the early-epoch gradient oscillation described
 in the overfitting analysis. Apply this schedule to `lambda1` at each epoch.
 
 **Dual early stopping** (separate patience counters for each objective):
+
 ```python
 class DualEarlyStopping:
     def __init__(self, patience_forecast=10, patience_align=15, delta=1e-4):
@@ -512,10 +579,12 @@ class DualEarlyStopping:
         # Returns True only when BOTH counters exhaust patience simultaneously
         ...
 ```
+
 Stop training only when both forecast and alignment validation losses have
 stagnated. Longer patience for alignment (noisier signal).
 
 **Checkpointing — Pareto front:**
+
 ```python
 class ParetoCheckpointer:
     def update(self, val_mse, val_align, epoch, model): ...
@@ -523,6 +592,7 @@ class ParetoCheckpointer:
     def best_align(self) -> dict: ...      # lowest val_align
     def best_balanced(self, alpha=0.5) -> dict: ...  # alpha*mse + (1-alpha)*align
 ```
+
 Maintain a Pareto front of non-dominated checkpoints across (val_mse, val_align).
 A checkpoint is dominated if another is better on both metrics simultaneously.
 Save each Pareto-optimal checkpoint to `checkpoints/pareto_e{epoch}.pt`.
@@ -530,6 +600,7 @@ At test time, load `best_forecast` for predictive evaluation and `best_align`
 for interpretability evaluation.
 
 **Per-epoch validation:**
+
 ```python
 def validate(loader) -> dict:
     # Returns all of:
@@ -545,6 +616,7 @@ def validate(loader) -> dict:
 ```
 
 **Concept collapse detection** (run every epoch, log always):
+
 ```python
 def concept_collapse_diagnostic(A_val: Tensor, threshold=0.01) -> dict:
     stds = A_val.std(dim=(0,1))          # (K,) std per concept across B*N segments
@@ -555,28 +627,33 @@ def concept_collapse_diagnostic(A_val: Tensor, threshold=0.01) -> dict:
         'n_collapsed': collapsed.sum().item(),
     }
 ```
+
 If any concept dimension collapses on validation: log a warning, reduce lambda1
 by 20%, and continue. Collapse means the encoder has stopped using that concept
 direction — a form of overfitting where the bottleneck becomes degenerate.
 
 **Attention entropy regularisation** (optional, controlled by config flag):
+
 ```python
 # Add to total loss if config.entropy_reg > 0:
 entropy_loss = -config.entropy_reg * (eta * eta.log()).sum(dim=1).mean()
 ```
+
 Penalises attention weight collapse (all weight on one segment). Prevents the
 attention mechanism from memorising a single training-period segment position.
 Default: `entropy_reg = 0.0` (disabled); enable if attention weights collapse
 to near-deterministic during training.
 
 **Training loop logging** (every epoch to stdout and `runs/{dataset}/{ts}/train_log.csv`):
+
 ```
 epoch | train_mse | val_mse | train_align | val_align | stability | n_collapsed | lr | lambda1
 ```
 
 **`fit(train_loader, val_loader, align_val_loader, max_epochs=100)`:**
+
 - `align_val_loader`: a separate loader for alignment validation — shuffled
-  segments from the *training period* (not the temporal validation split).
+  segments from the _training period_ (not the temporal validation split).
   This separates alignment generalisation from forecast generalisation.
   Alignment loss on this loader measures "does the model align its
   representations to trend concepts?" independently of "does it forecast
@@ -585,10 +662,12 @@ epoch | train_mse | val_mse | train_align | val_align | stability | n_collapsed 
 ---
 
 ## Phase 9 — TCRP Analysis (Relevance Propagation)
+
 > `tcrp/analysis/`
 
 ### T-16 · LRP engine
-**File:** `analysis/lrp.py`  
+
+**File:** `analysis/lrp.py`
 **Paper:** Eq. 13 (LRP-ε background), Appendix C
 
 Implement `LRPEngine`:
@@ -610,7 +689,8 @@ Implement `LRPEngine`:
   - `R_in[b, d, t] = R_out[b, d] / T_seg`
 
 ### T-17 · TCRP analysis pass
-**File:** `analysis/tcrp_analysis.py`  
+
+**File:** `analysis/tcrp_analysis.py`
 **Paper:** §5, Eqs. 14–19, Algorithm 1
 
 Implement `TCRPAnalyser(model: TCRPForecaster)`:
@@ -618,40 +698,49 @@ Implement `TCRPAnalyser(model: TCRPForecaster)`:
 `analyse(x: Tensor, h_star: int = 0) -> TCRPExplanation`:
 
 Step 1 — Run forward pass, cache all activations:
+
 - `output = model(x)` with `torch.no_grad()`
 - Manually cache: `Z` per segment, `A`, `h`, `eta`, `y_hat`
 
 Step 2 — Initialise relevance at horizon step `h_star`:
+
 - `R_out = y_hat[:, h_star]` — shape `(B,)`
 
 Step 3 — Through decoder (Eq. 14):
+
 - `R_h[k] = Theta[h_star, k] * h[k] / (Theta[h_star] @ h + eps) * R_out`
 - Output: `R_h (B, K)` — **concept relevance vector**
 
 Step 4 — Through attention pooling (Eq. 15):
+
 - `R_A[n, k] = eta[n] * R_h[k]`
 - Output: `R_A (B, N, K)` — segment × concept relevance matrix
 
 Step 5 — Through concept projection (Eq. 16):
+
 - `R_z[n, d] = sum_k w[k,d] * z[n,d] / (a[n,k] + eps) * R_A[n,k]`
 - Output: `R_z (B, N, d)` — back into encoder latent space
 
 Step 6 — Through encoder (layer-by-layer LRP):
+
 - Call `lrp_mean_pool`, then traverse TCN layers in reverse order
 - For each `CausalDilatedBlock`: call `lrp_relu` then `lrp_gamma_conv` on each conv
 - Output: `R_s (B, N, L)` — per-segment raw-timestep relevance
 
 Step 7 — Temporal assembly (Eq. 17):
+
 - For each `t in 0…T-1`: `R_x[t] = sum_{n: t in s_n} R_s[n, t - t_n] / overlap[t]`
 - Use `model.segmenter.start_indices` and `model.segmenter.overlap_counts`
 - Output: `R_x (B, T)` — **global temporal relevance map**
 
 Step 8 — Concept-conditional temporal maps (Eq. 18):
+
 - `weight[n, k] = R_A[n, k] / R_A[n].sum(k)` — concept soft weight per segment
 - `R_x_k[k, t] = sum_{n: t in s_n} weight[n, k] * R_s[n, t-t_n] / overlap[t]`
 - Output: `R_x_cond (B, K, T)` — **K concept-conditional temporal maps**
 
 Return `TCRPExplanation`:
+
 ```python
 @dataclass
 class TCRPExplanation:
@@ -665,9 +754,11 @@ class TCRPExplanation:
 ```
 
 ### T-18 · Conservation check
+
 **Paper:** Theorem 1
 
 Implement `verify_conservation(explanation: TCRPExplanation, y_hat: Tensor, h_star: int, tol=1e-4) -> bool`:
+
 - Assert `|R_x.sum(dim=-1) - y_hat[:, h_star]| < tol` for all samples in batch
 - Assert `|R_x_cond.sum(dim=1) - R_x| < tol` (map decomposition, Prop. 2)
 - Assert `|R_h.sum(dim=-1) - y_hat[:, h_star]| < tol` (concept decomp., Prop. 1)
@@ -676,13 +767,137 @@ Implement `verify_conservation(explanation: TCRPExplanation, y_hat: Tensor, h_st
 
 ---
 
+### T-18b · Forecast completeness verification
+
+**Paper:** Proposition (Lipschitz bound, supplementary material)
+
+**Motivation.** TCRP does not claim the concept vocabulary reconstructs
+the raw input — only that it captures the _forecasting-relevant_ variation.
+The theoretical justification is the Lipschitz bound: if the decoder
+$f_\Theta$ is $L_f$-Lipschitz in $\h$, then the concept bottleneck loses at
+most $L_f \cdot \|(\bm I - \bm P_\mathcal{W})\z_n\|$ forecast accuracy
+relative to an unconstrained model. A small bypass ratio therefore implies
+forecast completeness. This task measures both sides of that bound.
+
+**Implement `forecast_completeness_report(model, unconstrained_model, val_loader) -> dict`:**
+
+```python
+def forecast_completeness_report(
+    model: TCRPForecaster,
+    unconstrained: nn.Module,   # same encoder + linear head, no bottleneck
+    val_loader: DataLoader,
+) -> dict:
+    """
+    Measures three quantities that jointly certify forecast completeness:
+
+    1. bypass_ratio: fraction of encoder variance outside concept space
+       bypass_ratio = mean_n ||( I - P_W) z_n||^2 / ||z_n||^2
+       Interpretation: < 0.10 → concept space captures >90% of encoder variance
+
+    2. lipschitz_bound: empirical upper bound on decoder Lipschitz constant
+       Estimate L_f by sampling pairs (h_a, h_b) from the val set and
+       computing max ||f(h_a) - f(h_b)||_2 / ||h_a - h_b||_2
+       For a linear decoder f_Theta, L_f = ||Theta||_op (operator norm).
+
+    3. completeness_gap: forecast MSE difference between TCRP and unconstrained
+       gap = MSE(TCRP) - MSE(unconstrained)
+       Should satisfy: gap <= L_f * sqrt(mean bypass_ratio * mean ||z_n||^2)
+       (the Lipschitz bound from the supplementary proposition)
+       If gap > bound: concept space is insufficient; flag for vocabulary extension.
+       If gap <= bound: concept space is forecast-complete.
+    """
+    W  = model.bottleneck.weight            # (K, d)
+    WtW_inv = torch.linalg.pinv(W @ W.T)
+    P_W = W.T @ WtW_inv @ W                # (d, d) concept projector
+
+    # Decoder Lipschitz constant (linear decoder: operator norm of Theta)
+    Theta = model.decoder.weight            # (H, K)
+    L_f = torch.linalg.norm(Theta, ord=2).item()   # spectral norm
+
+    bypass_ratios, gaps = [], []
+    for x, y_true in val_loader:
+        with torch.no_grad():
+            segs = model.segmenter(x)
+            Z    = model.encoder(segs).reshape(-1, model.config.d)  # (B*N, d)
+
+            # Bypass ratio
+            Z_res = Z - (P_W @ Z.T).T
+            ratio = (Z_res.norm(dim=1)**2 / (Z.norm(dim=1)**2 + 1e-8)).mean()
+            bypass_ratios.append(ratio.item())
+
+            # Forecast gap
+            y_tcrp  = model(x).y_hat
+            y_uncon = unconstrained(x)
+            gaps.append((F.mse_loss(y_tcrp, y_true)
+                         - F.mse_loss(y_uncon, y_true)).item())
+
+    mean_bypass = float(np.mean(bypass_ratios))
+    mean_z_norm = float(np.mean([
+        model.encoder(model.segmenter(x)).reshape(-1, model.config.d)
+        .norm(dim=1).mean().item()
+        for x, _ in val_loader
+    ]))
+
+    # Lipschitz bound: gap <= L_f * sqrt(bypass * ||z||^2)
+    theoretical_bound = L_f * (mean_bypass * mean_z_norm**2)**0.5
+
+    return {
+        'bypass_ratio':       mean_bypass,
+        'lipschitz_L_f':      L_f,
+        'completeness_gap':   float(np.mean(gaps)),
+        'theoretical_bound':  theoretical_bound,
+        'bound_satisfied':    float(np.mean(gaps)) <= theoretical_bound,
+        'forecast_complete':  mean_bypass < 0.10,
+        'recommendation': (
+            'concept space is forecast-complete'
+            if mean_bypass < 0.10 else
+            'bypass_ratio high — consider increasing K or enabling adversarial training'
+        ),
+    }
+```
+
+**The unconstrained baseline model** is a `TCNEncoder` + `nn.Linear(d, H)` trained
+on the same data with the same encoder architecture but no concept bottleneck and no
+alignment loss. Train it alongside TCRP using T-15 with `lambda1=0` and no
+`ConceptProjection` layer. This gives a ceiling on forecasting accuracy against
+which the completeness gap is measured.
+
+**Run conditions:**
+
+- Call `forecast_completeness_report` after every training run before reporting
+  test metrics
+- If `bound_satisfied=False`: the concept vocabulary is losing more forecast
+  accuracy than the Lipschitz bound predicts; investigate encoder capacity or
+  concept dimension count $K$
+- If `bypass_ratio > 0.30`: enable adversarial training (T\*-04) or increase $K$
+- Report all four numeric quantities in the results table alongside MSE/MAE
+
+**Unit tests** (`tests/test_completeness.py`):
+
+- `test_bypass_zero_full_rank`: when $K = d$ (concept space = full encoder space),
+  bypass ratio should be 0 to machine precision
+- `test_bypass_one_rank_one`: when $K = 1$ and $d = 64$, bypass ratio ≈ 63/64
+- `test_lipschitz_linear`: for a linear decoder, $L_f$ should equal
+  `torch.linalg.norm(Theta, ord=2)` to machine precision
+- `test_bound_monotone`: increasing $K$ should monotonically decrease
+  the bypass ratio (and therefore the Lipschitz bound)
+- `test_completeness_gap_nonneg_on_average`: `completeness_gap` should be
+  non-negative on average (bottleneck cannot improve over unconstrained in expectation
+  on validation); flag if negative by more than 0.005 (would indicate TCRP
+  regularisation is helping, which is scientifically interesting)
+
+---
+
 ## Phase 10 — Data Pipeline
+
 > `tcrp/data/`
 
 ### T-19 · Dataset loaders
+
 **File:** `data/datasets.py`
 
 Implement `TimeSeriesDataset(path, split, T, H, normalise=True)`:
+
 - Supports: `ETTh1`, `ETTm2`, `Weather`, `ExchangeRate`, `GEFCOM2014`
 - Loads CSV, applies z-score normalisation per channel using train-set statistics only
 - Returns `(x, y)` pairs: `x (T,)`, `y (H,)` for univariate; `x (T, V)`, `y (H, V)` for multivariate
@@ -690,6 +905,7 @@ Implement `TimeSeriesDataset(path, split, T, H, normalise=True)`:
 - `DataLoader` wrappers: `get_loaders(dataset_name, batch_size=32, num_workers=4)`
 
 ### T-20 · Preprocessing utilities
+
 **File:** `data/preprocessing.py`
 
 - `zscore_normalise(train, val, test) -> tuple`: fit on train, transform all three
@@ -699,12 +915,15 @@ Implement `TimeSeriesDataset(path, split, T, H, normalise=True)`:
 ---
 
 ## Phase 11 — Evaluation
+
 > `tcrp/eval/`
 
 ### T-21 · Forecasting metrics
+
 **File:** `eval/metrics.py`
 
 Implement, all operating on unnormalised predictions:
+
 - `mae(y_pred, y_true) -> float`
 - `mse(y_pred, y_true) -> float`
 - `mase(y_pred, y_true, y_naive) -> float`: MAE relative to seasonal naive baseline
@@ -713,10 +932,12 @@ Implement, all operating on unnormalised predictions:
 - `evaluate_all(model, loader, inverse_transform_fn) -> dict`: runs full test loop, returns all metrics
 
 ### T-22 · Concept Alignment Score
-**File:** `eval/metrics.py`  
+
+**File:** `eval/metrics.py`
 **Paper:** §7.3
 
 Implement `concept_alignment_score(R_h: Tensor, expert_labels: Tensor) -> dict`:
+
 - `R_h (N_samples, K)` — concept relevance vectors
 - `expert_labels (N_samples,)` — integer index of the expert-identified primary concept
 - For each sample, `predicted_concept = argmax(|R_h|)`
@@ -725,21 +946,25 @@ Implement `concept_alignment_score(R_h: Tensor, expert_labels: Tensor) -> dict`:
 - Note: annotators should be instructed to label noise-dominated segments as class 2 (stochasticity)
 
 ### T-23 · Temporal faithfulness
-**File:** `eval/metrics.py`  
+
+**File:** `eval/metrics.py`
 **Paper:** §7.3
 
 Implement `temporal_faithfulness(model, x, y_true, R_x, p=0.2) -> dict`:
+
 - Identify top-`p` fraction of timesteps by `|R_x|`
 - **Comprehensiveness**: `original_mse - masked_mse` where masked sets top-p timesteps to channel mean
 - **Sufficiency**: `mse` when retaining only the top-p timesteps (rest set to channel mean)
 - Return `{comprehensiveness, sufficiency}`
 
 ### T-24 · Baseline runners
+
 **File:** `eval/baselines.py`
 
 Thin wrappers calling external model implementations:
+
 - `DLinearBaseline(H)`: from `ts_library.dlinear`
-- `NBEATSBaseline(H)`: from `ts_library.nbeats`  
+- `NBEATSBaseline(H)`: from `ts_library.nbeats`
 - `PatchTSTBaseline(H)`: from `ts_library.patchtst`
 - Each exposes `.fit(train_loader, val_loader)` and `.predict(x) -> Tensor`
 - Each stores test predictions for downstream CAS comparison
@@ -749,6 +974,7 @@ Thin wrappers calling external model implementations:
 ## Phase 12 — Tests
 
 ### T-25 · Unit tests
+
 **File:** `tests/test_concepts.py`
 
 - `test_monotonicity_extreme_cases`: all-increasing → `mu_signed ≈ 1`; all-decreasing → `mu_signed ≈ -1`
@@ -792,6 +1018,7 @@ Thin wrappers calling external model implementations:
 ## Phase 13 — Experiment scripts
 
 ### T-26 · Training entry point
+
 **File:** `scripts/train.py`
 
 ```
@@ -804,16 +1031,19 @@ python train.py --dataset ETTh1 --H 96 --lambda1 0.1 --seed 42
 - Reports final test metrics after training
 
 ### T-27 · Ablation runner
+
 **File:** `scripts/ablation.py`
 
-Grid over `lambda1 ∈ [0, 0.01, 0.05, 0.1, 0.2, 0.5]`, `L ∈ [10, 15, 20, 25, 30, 40]`, `hard vs soft concept scores`, and `stochasticity weights (w1, w2, w3) ∈ {equal (1/3,1/3,1/3), Hurst-heavy (0.6,0.2,0.2), flatness-heavy (0.2,0.6,0.2)}`.  
+Grid over `lambda1 ∈ [0, 0.01, 0.05, 0.1, 0.2, 0.5]`, `L ∈ [10, 15, 20, 25, 30, 40]`, `hard vs soft concept scores`, and `stochasticity weights (w1, w2, w3) ∈ {equal (1/3,1/3,1/3), Hurst-heavy (0.6,0.2,0.2), flatness-heavy (0.2,0.6,0.2)}`.
 For each configuration: train, evaluate, save metrics to `ablation_results.csv`.
 
 ### T-28 · Analysis visualiser
+
 **File:** `scripts/visualise.py`
 
 Given a checkpoint and a look-back window:
-1. Run `TCRPAnalyser.analyse()` 
+
+1. Run `TCRPAnalyser.analyse()`
 2. Plot 1: `R_x` overlaid on raw `x` (matplotlib, shared x-axis)
 3. Plot 2: Stacked area chart of `R_x_cond` — one area per concept, colours matching paper figure
 4. Plot 3: `R_h` bar chart — concept relevance with sign
@@ -823,6 +1053,7 @@ Given a checkpoint and a look-back window:
 ---
 
 ## Phase 14 — Overfitting Diagnostics
+
 > `tcrp/diagnostics/`
 
 Seven distinct overfitting mechanisms exist in TCRP, each requiring a
@@ -832,6 +1063,7 @@ to detect all seven during and after training.
 ---
 
 ### T-29 · Concept direction overfitting monitor
+
 **File:** `diagnostics/concept_overfit.py`
 
 Detects: concept projection weights $\bm W$ overfitting to training-period
@@ -871,6 +1103,7 @@ def concept_direction_overfit_report(
 ```
 
 **Thresholds:**
+
 - `gap > 0.15`: warning — concept direction is overfitting to training period
 - `gap > 0.30`: critical — stop training and reduce `lambda1` or increase dropout
 - `corr_val < 0.3` for any concept: the concept is not generalising at all;
@@ -879,6 +1112,7 @@ def concept_direction_overfit_report(
 ---
 
 ### T-30 · Attention memorisation detector
+
 **File:** `diagnostics/attention_overfit.py`
 
 Detects: attention weights $\eta_n$ collapsing to memorised training-period
@@ -905,6 +1139,7 @@ def attention_memorisation_report(
 ```
 
 **Implementation:**
+
 - For each batch, compute `H_eta = -(eta * eta.log()).sum(dim=1).mean()`
 - Log `H_eta` on train and val every epoch; alert if `H_eta_val < 1.0` (near-deterministic)
 - Run position regression: `OLS(eta_n ~ position_n)` and concept regression:
@@ -915,6 +1150,7 @@ def attention_memorisation_report(
 ---
 
 ### T-31 · Orthogonal direction bypass detector
+
 **File:** `diagnostics/bypass_overfit.py`
 
 Detects: encoder learning to encode training-specific information in directions
@@ -966,6 +1202,7 @@ orthogonality penalty $\mathcal{L}_\text{orth} = \|(\bm I - \bm P_\text{concept}
 ---
 
 ### T-32 · Spurious concept-target correlation detector
+
 **File:** `diagnostics/spurious_correlation.py`
 
 Detects: decoder learning spurious associations between concept activations
@@ -1018,6 +1255,7 @@ data augmentation (rolling window expansion) or reducing model capacity.
 ---
 
 ### T-33 · Temperature parameter stability check
+
 **File:** `diagnostics/temperature_overfit.py`
 
 Detects: learned temperature parameters $\alpha$ (monotonicity) and $\beta$
@@ -1065,6 +1303,7 @@ this check enforces that recommendation.
 ---
 
 ### T-34 · Full overfitting dashboard
+
 **File:** `diagnostics/dashboard.py`
 
 Aggregates all diagnostic reports into a single summary printed after
@@ -1115,6 +1354,7 @@ def overfit_dashboard(
 ```
 
 **Run `overfit_dashboard` at:**
+
 - End of training (always)
 - Every 10 epochs during training for early detection
 - After loading any checkpoint before reporting test results
@@ -1122,6 +1362,7 @@ def overfit_dashboard(
 ---
 
 ### T-35 · Overfitting unit tests
+
 **File:** `tests/test_overfit_diagnostics.py`
 
 - `test_detach_assertion`: pass `C` with `requires_grad=True` to `TCRPLoss`;
@@ -1164,6 +1405,8 @@ T-13 → T-14, T-17
 T-14 → T-15
 T-16 → T-17
 T-17 → T-18
+T-18 → T-18b          (conservation must pass before completeness is measured)
+T-18b → T-26          (completeness report gates test result reporting)
 
 T-19 → T-20 → T-15, T-24
 T-21 → T-26
@@ -1183,16 +1426,16 @@ T-34 → T-26  (dashboard must pass before reporting test results)
 T-35 (overfit unit tests): run after T-29–T-34
 ```
 
-Minimum viable path for a first end-to-end run on ETTh1:  
+Minimum viable path for a first end-to-end run on ETTh1:
 **T-01 → T-02 → T-03 → T-03b → T-03c → T-03d → T-03e → T-03f → T-04 → T-05 → T-06 → T-07 → T-08 → T-09 → T-10 → T-11 → T-13 → T-14 → T-15 → T-19 → T-20 → T-21 → T-26**
 
-Add T-16, T-17, T-18 for the analysis pass.  
-Add T-22, T-23 for interpretability evaluation.  
+Add T-16, T-17, T-18 for the analysis pass.
+Add T-22, T-23 for interpretability evaluation.
 Add T-29–T-35 for overfitting diagnostics (run after first successful training).
 
 ---
 
-## Phase T* — Adversarial Concept Purity (Alternative Training Direction)
+## Phase T\* — Adversarial Concept Purity (Alternative Training Direction)
 
 > **Status:** alternative to the standard Phase 8 training pipeline.
 > Not required for the baseline TCRP results. Pursue after baseline experiments
@@ -1213,7 +1456,8 @@ Add T-29–T-35 for overfitting diagnostics (run after first successful training
 
 ---
 
-### T*-01 · Gradient Reversal Layer
+### T\*-01 · Gradient Reversal Layer
+
 **File:** `model/adversarial.py`
 
 ```python
@@ -1247,7 +1491,7 @@ class GRLLayer(nn.Module):
 ```
 
 **Key implementation constraint:** the GRL must sit on the alignment loss
-path only. The forecast loss gradient must reach the encoder *without*
+path only. The forecast loss gradient must reach the encoder _without_
 reversal. Implement this by computing two separate forward passes through
 the bottleneck — one through the GRL for the alignment loss, one directly
 for the forecast loss — or by using `retain_graph=True` and separate
@@ -1255,6 +1499,7 @@ for the forecast loss — or by using `retain_graph=True` and separate
 as this would route the forecast gradient through the GRL.
 
 **Correct two-path backward:**
+
 ```python
 # Forward
 z = encoder(segments)           # (B, N, d)
@@ -1278,6 +1523,7 @@ optimizer.step()
 ```
 
 Unit tests:
+
 - `test_grl_forward_identity`: output equals input to machine precision
 - `test_grl_backward_negation`: gradient through GRL equals `-alpha * upstream_grad`
 - `test_grl_alpha_zero`: alpha=0 → gradient is zero (GRL acts as stop-gradient)
@@ -1288,7 +1534,8 @@ Unit tests:
 
 ---
 
-### T*-02 · Alpha schedule
+### T\*-02 · Alpha schedule
+
 **File:** `model/adversarial.py`
 
 ```python
@@ -1326,6 +1573,7 @@ def grl_alpha_schedule(
 ```
 
 Unit tests:
+
 - `test_schedule_warmup_zero`: alpha == 0 for all epochs < warmup_epochs
 - `test_schedule_monotone`: alpha is non-decreasing after warmup
 - `test_schedule_max`: alpha approaches alpha_max as epoch → max_epochs
@@ -1333,7 +1581,8 @@ Unit tests:
 
 ---
 
-### T*-03 · Adversarial TCRP model wrapper
+### T\*-03 · Adversarial TCRP model wrapper
+
 **File:** `model/adversarial.py`
 
 ```python
@@ -1392,7 +1641,8 @@ flowing into the encoder, not into $\bm W$ itself).
 
 ---
 
-### T*-04 · Adversarial trainer
+### T\*-04 · Adversarial trainer
+
 **File:** `training/adversarial_trainer.py`
 
 Extends `Trainer` (T-15) with the two-path backward and alpha scheduling.
@@ -1465,6 +1715,7 @@ class AdversarialTrainer(Trainer):
 ```
 
 New config fields added to `TCRPConfig`:
+
 ```python
 adversarial:    bool  = False   # enable adversarial training
 alpha_max:      float = 1.0     # maximum GRL reversal strength
@@ -1473,7 +1724,8 @@ warmup_epochs:  int   = 20      # epochs before GRL activates
 
 ---
 
-### T*-05 · Concept purity diagnostic
+### T\*-05 · Concept purity diagnostic
+
 **File:** `diagnostics/concept_purity.py`
 
 Measures whether learned concept directions $\bm w_k$ are aligned with
@@ -1565,7 +1817,8 @@ diagnostic for the adversarial regime.
 
 ---
 
-### T*-06 · Adversarial vs standard comparison experiment
+### T\*-06 · Adversarial vs standard comparison experiment
+
 **File:** `scripts/adversarial_compare.py`
 
 ```
@@ -1573,17 +1826,20 @@ python adversarial_compare.py --dataset ETTh1 --H 96 --seed 42
 ```
 
 Trains two models on identical data and seeds:
+
 1. Standard TCRP (T-15 trainer, `adversarial=False`)
-2. Adversarial TCRP (T*-04 trainer, `adversarial=True`, `alpha_max=1.0`)
+2. Adversarial TCRP (T\*-04 trainer, `adversarial=True`, `alpha_max=1.0`)
 
 Reports for each:
+
 - Val MSE, MAE (forecast quality)
 - CAS per concept family (alignment quality)
 - Bypass ratio from T-31 (orthogonal leakage)
-- Mean concept purity score from T*-05 (contamination level)
+- Mean concept purity score from T\*-05 (contamination level)
 - Concept direction gap from T-29 (train vs val alignment divergence)
 
 Primary success criterion for adversarial training:
+
 - Purity scores higher (less contamination)
 - Bypass ratio lower (less orthogonal leakage)
 - CAS equal or higher (alignment not degraded)
@@ -1595,7 +1851,8 @@ substantially purer concept directions depending on deployment context.
 
 ---
 
-### T*-07 · Adversarial unit tests
+### T\*-07 · Adversarial unit tests
+
 **File:** `tests/test_adversarial.py`
 
 - `test_grl_paths_independent`: verify via `register_hook` that the
@@ -1617,7 +1874,7 @@ substantially purer concept directions depending on deployment context.
 
 ---
 
-## T* Dependency
+## T\* Dependency
 
 ```
 T-13 (base TCRP model) → T*-01 → T*-02 → T*-03 → T*-04
@@ -1630,14 +1887,15 @@ T-29–T-34 (overfit diagnostics) → T*-06  (run both diagnostic suites for com
 T*-01–T*-05 → T*-07  (unit tests)
 ```
 
-**T* is independent of T-16–T-28.**  The TCRP analysis pass, evaluation
+**T\* is independent of T-16–T-28.** The TCRP analysis pass, evaluation
 metrics, and experiment scripts all operate on the trained model weights
-and are architecture-agnostic.  Once `AdversarialTCRPForecaster` exposes
+and are architecture-agnostic. Once `AdversarialTCRPForecaster` exposes
 the same interface as `TCRPForecaster`, all downstream tasks apply unchanged.
 
 **Recommended sequencing:**
+
 1. Complete baseline training (T-26) and run diagnostics (T-29–T-34)
-2. If bypass_ratio > 0.3 or concept direction gap > 0.2: proceed with T*
-3. Run T*-06 comparison experiment
+2. If bypass_ratio > 0.3 or concept direction gap > 0.2: proceed with T\*
+3. Run T\*-06 comparison experiment
 4. If adversarial training improves purity without MSE degradation: adopt
    as the default training mode and update T-26 accordingly

@@ -4,7 +4,9 @@ repos:
     rev: v4.6.0
     hooks:
       - id: trailing-whitespace # removes trailing spaces
+        exclude: ^tcrp/data/
       - id: end-of-file-fixer # ensures files end with a newline
+        exclude: ^tcrp/data/
       - id: mixed-line-ending # normalises CRLF → LF
         args: [--fix=lf]
       - id: check-yaml
@@ -56,6 +58,7 @@ repos:
           - css
           - scss
         args: [--print-width=88, --single-quote, --trailing-comma=es5]
+        exclude: ^tcrp/data/
 
   # ── JS/TS: ESLint ─────────────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/mirrors-eslint
@@ -63,6 +66,7 @@ repos:
     hooks:
       - id: eslint
         files: \.[jt]sx?$
+        exclude: ^tcrp/data/
         types: [file]
         additional_dependencies:
           - eslint@9.5.0

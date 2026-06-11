@@ -4,9 +4,6 @@
 **/*.pyc
 **/*.pkl
 **/*.log
-**/*.csv
-!tcrp/data/**/*.csv
 **/*.json
 *.pt
 /outputs/
-**/tcrp/data/

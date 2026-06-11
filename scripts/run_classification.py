@@ -48,7 +48,7 @@ EXPERIMENTS: dict[str, dict] = {
             "batch_size": 128,
             "max_epochs": 150,
             "es_patience": 20,
-            "lr": 1e-2,
+            "lr": 1e-3,
         },
         "weighted_sampling": True,
     },
