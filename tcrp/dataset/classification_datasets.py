@@ -396,11 +396,158 @@ def _build_hurst_windows(
     return np.array(windows, dtype=np.float32), np.array(labels, dtype=np.int64)
 
 
+# ── EthanolConcentration ─────────────────────────────────────────────────────
+
+
+class EthanolConcentrationDataset(Dataset):
+    """EthanolConcentration spectroscopy classification dataset (UCR Archive).
+
+    Near-infrared spectra of water-ethanol solutions sampled from 44 whisky
+    bottles at four concentrations: 35%, 38%, 40%, 45%.
+    T=1751, C=4 classes (E35→0, E38→1, E40→2, E45→3).
+
+    The dataset has 3 spectral channels — repeat readings of the same bottle.
+    All 3 are loaded and averaged per sample (noise reduction), giving a single
+    univariate series of length T=1751 per sample.
+
+    The raw TRAIN split is divided 80/20 into train/val (stratified by class),
+    so the val split is independent of the TEST files.
+
+    Source: http://www.timeseriesclassification.com/description.php?Dataset=EthanolConcentration
+    Files expected at data_root/EthanolConcentrationDimension{1,2,3}_{TRAIN,TEST}.arff
+    """
+
+    T: int = 1751
+    C: int = 4
+    _LABEL_MAP: dict[str, int] = {"E35": 0, "E38": 1, "E40": 2, "E45": 3}
+
+    def __init__(
+        self,
+        split: str,
+        data_root: str | Path = DATA_ROOT / "EthanolConcentration",
+        mean: np.ndarray | None = None,
+        std: np.ndarray | None = None,
+        val_frac: float = 0.2,
+        seed: int = 42,
+    ) -> None:
+        """Load all 3 spectral channels, average them, and return the requested split.
+
+        For split='train' or 'val': reads EthanolConcentrationDimension{1,2,3}_TRAIN.arff
+        and performs a stratified 80/20 split.
+        For split='test': reads EthanolConcentrationDimension{1,2,3}_TEST.arff.
+        """
+        if split not in ("train", "val", "test"):
+            raise ValueError(f"split must be train/val/test, got '{split}'")
+
+        arff_split = "TEST" if split == "test" else "TRAIN"
+        series, labels = self._load_averaged(Path(data_root), arff_split)
+
+        if split in ("train", "val"):
+            series, labels = self._stratified_split(
+                series, labels, val_frac, seed, split
+            )
+
+        if mean is None:
+            self.mean = series.mean(axis=0, keepdims=True)
+            self.std = series.std(axis=0, keepdims=True)
+            self.std = np.where(self.std == 0, 1.0, self.std)
+        else:
+            self.mean = mean
+            self.std = std
+
+        self.x = torch.from_numpy((series - self.mean) / self.std)
+        self.y = torch.from_numpy(labels)
+
+        counts = np.bincount(labels, minlength=self.C).astype(np.float32)
+        self.class_weights = torch.from_numpy(1.0 / np.where(counts == 0, 1.0, counts))
+
+    def _load_averaged(
+        self, data_root: Path, arff_split: str
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Load all 3 dimension ARFF files and return their per-sample average."""
+        channels = []
+        labels = None
+        for dim in (1, 2, 3):
+            fname = f"EthanolConcentrationDimension{dim}_{arff_split}.arff"
+            path = data_root / fname
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"EthanolConcentration file not found: {path}\n"
+                    f"Download from http://www.timeseriesclassification.com/"
+                    f"description.php?Dataset=EthanolConcentration\n"
+                    f"and extract to {data_root}"
+                )
+            series_d, labels_d = self._parse_arff(path)
+            channels.append(series_d)
+            if labels is None:
+                labels = labels_d
+
+        averaged = np.mean(np.stack(channels, axis=0), axis=0).astype(np.float32)
+        return averaged, labels
+
+    def _stratified_split(
+        self,
+        series: np.ndarray,
+        labels: np.ndarray,
+        val_frac: float,
+        seed: int,
+        which: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Stratified split of the TRAIN data into train/val subsets."""
+        rng = np.random.default_rng(seed)
+        train_idx, val_idx = [], []
+        for c in np.unique(labels):
+            idx = np.where(labels == c)[0]
+            idx = rng.permutation(idx)
+            n_val = max(1, int(len(idx) * val_frac))
+            val_idx.extend(idx[:n_val].tolist())
+            train_idx.extend(idx[n_val:].tolist())
+
+        chosen = np.array(train_idx if which == "train" else val_idx)
+        chosen.sort()
+        return series[chosen], labels[chosen]
+
+    def _parse_arff(self, path: Path) -> tuple[np.ndarray, np.ndarray]:
+        """Parse ARFF: skip comments and @-directives, read CSV data block.
+
+        Last column is the class label; all preceding columns are signal values.
+        """
+        rows, labels_raw = [], []
+        in_data = False
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("%"):
+                    continue
+                if line.lower() == "@data":
+                    in_data = True
+                    continue
+                if line.startswith("@"):
+                    continue
+                if in_data:
+                    parts = line.split(",")
+                    rows.append([float(v) for v in parts[:-1]])
+                    labels_raw.append(parts[-1].strip())
+
+        series = np.array(rows, dtype=np.float32)
+        labels = np.array([self._LABEL_MAP[lbl] for lbl in labels_raw], dtype=np.int64)
+        return series, labels
+
+    def __len__(self) -> int:
+        """Return number of samples."""
+        return len(self.y)
+
+    def __getitem__(self, idx: int) -> tuple[Tensor, int]:
+        """Return (x, y) pair at index idx."""
+        return self.x[idx], self.y[idx].item()
+
+
 # ── Loader factory ───────────────────────────────────────────────────────────
 
 DATASET_REGISTRY: dict[str, type] = {
     "ECG5000": ECG5000Dataset,
     "MITBIH": MITBIHDataset,
+    "Ethanol": EthanolConcentrationDataset,
     "FX": FXRegimeDataset,
 }
 
@@ -408,7 +555,6 @@ _NPZ_PATHS: dict[str, Path] = {
     "CWRU": DATA_ROOT / "CWRU" / "cwru_classification.npz",
     "SleepEDF": DATA_ROOT / "Sleep-EDF" / "sleep_edf.npz",
     "UCIHAR": DATA_ROOT / "UCI-HAR" / "uci_har.npz",
-    "Ethanol": DATA_ROOT / "EthanolConcentration" / "ethanol.npz",
     "SP500_A": DATA_ROOT / "SP500" / "sp500_recession.npz",
     "SP500_B": DATA_ROOT / "SP500" / "sp500_vix_regime.npz",
 }
@@ -417,7 +563,6 @@ _NPZ_DOWNLOAD_NOTES: dict[str, str] = {
     "CWRU": _CWRU_DOWNLOAD,
     "SleepEDF": _SLEEP_EDF_DOWNLOAD,
     "UCIHAR": _UCI_HAR_DOWNLOAD,
-    "Ethanol": _ETHANOL_DOWNLOAD,
     "SP500_A": _SP500_DOWNLOAD,
     "SP500_B": _SP500_DOWNLOAD,
 }
@@ -521,4 +666,8 @@ def build_classification_loaders(
 
 def _has_val_split(cls: type) -> bool:
     """Return True for dataset classes that support a 'val' split."""
-    return cls in (FXRegimeDataset, NPZClassificationDataset)
+    return cls in (
+        FXRegimeDataset,
+        NPZClassificationDataset,
+        EthanolConcentrationDataset,
+    )

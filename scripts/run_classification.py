@@ -282,8 +282,8 @@ def run(
     with open(out_dir / "concept_profiles.json", "w") as f:
         json.dump(profiles_serialisable, f, indent=2)
 
-    print(f"  metrics   {out_dir / 'metrics.json'}")
-    print(f"  profiles  {out_dir / 'concept_profiles.json'}")
+    print(f"  metrics       {out_dir / 'metrics.json'}")
+    print(f"  profiles      {out_dir / 'concept_profiles.json'}")
 
     return metrics_out
 

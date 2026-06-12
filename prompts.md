@@ -207,3 +207,52 @@ poetry run python scripts/run_classification.py --experiment EXP-C07-A --seed 42
 | Dataset configs      | `configs/datasets/{ecg5000,mitbih,cwru,…}.yaml`         |
 | Trainer defaults     | `configs/trainers/classification_trainer.yaml`          |
 | Experiment overrides | `configs/experiments/classification/exp_c0{1-8}_*.yaml` |
+
+---
+
+## Baseline Classification Experiments
+
+Entry point is `scripts/run_baseline_classification.py`.
+Models: `mlp` · `lstm` · `fcn` · `resnet` · `nbeats`
+Output format is identical to `run_classification.py` for direct comparison.
+
+```bash
+# Single model + experiment
+poetry run python scripts/run_baseline_classification.py --experiment EXP-C01 --model fcn
+
+# All models for one experiment
+poetry run python scripts/run_baseline_classification.py --experiment EXP-C01 --model all
+
+# One model across all experiments
+poetry run python scripts/run_baseline_classification.py --experiment all --model resnet
+
+# Full sweep (all models × all experiments)
+poetry run python scripts/run_baseline_classification.py --experiment all --model all
+
+# With custom seed / output dirs
+poetry run python scripts/run_baseline_classification.py \
+    --experiment EXP-C02 --model fcn --seed 0 \
+    --results_dir results/ --checkpoint_dir checkpoints/
+```
+
+### Baseline model descriptions
+
+| Model    | Architecture                                            | Reference            |
+| -------- | ------------------------------------------------------- | -------------------- |
+| `mlp`    | Flatten → 3×(Linear 500→ReLU→Dropout)                   | Wang et al. 2017     |
+| `lstm`   | Bidirectional LSTM (2 layers, hidden=128) → linear head | —                    |
+| `fcn`    | Conv(128,k=8)→Conv(256,k=5)→Conv(128,k=3) + GAP         | Wang et al. 2017     |
+| `resnet` | 3 residual blocks (1→64→128→128 ch) + GAP               | Wang et al. 2017     |
+| `nbeats` | N-BEATS stack (backcast residuals, accumulated logits)  | Oreshkin et al. 2020 |
+
+### Baseline overrides table
+
+| Flag               | Example                            |
+| ------------------ | ---------------------------------- |
+| `--experiment`     | `EXP-C01` … `EXP-C08` or `all`     |
+| `--model`          | `fcn`, `resnet`, `mlp`, … or `all` |
+| `--seed`           | `--seed 0`                         |
+| `--results_dir`    | `--results_dir results/`           |
+| `--checkpoint_dir` | `--checkpoint_dir checkpoints/`    |
+
+Results are saved to `results/BL-{MODEL}_{EXPERIMENT}_seed{N}/metrics.json`.

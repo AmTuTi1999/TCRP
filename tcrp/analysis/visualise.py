@@ -322,15 +322,14 @@ def plot_segment_concept_map(
     out_dir: Path,
     highlight_seg: int | None = None,
     label: str | None = None,
+    top_k: int = 5,
 ) -> None:
-    """Two-panel figure showing dominant concept per time region and a segment drill-down.
+    """5×1 subfigure: for each top concept, x(t) with its highest-relevance segment highlighted.
 
-    Panel 1 — time series x(t) with background coloured by the dominant concept
-    at each timestep (weighted vote over all segments covering that step).
-    The selected segment is overlaid with a bold rectangle.
-
-    Panel 2 — horizontal bar chart of R_A[highlight_seg, :] showing all concept
-    relevances for the chosen segment; the dominant concept bar is outlined.
+    Each panel corresponds to one of the top-k concepts ranked by mean |R_A|.
+    The segment where that concept has the highest |R_A[n, k]| is overlaid as a
+    filled, bordered box on the time series so the temporal location is immediately
+    visible.
 
     Args:
         x:             Raw input signal (T,).
@@ -341,139 +340,92 @@ def plot_segment_concept_map(
         run_id:        String used in titles.
         h_star:        Horizon step being explained.
         out_dir:       Output directory.
-        highlight_seg: Segment index to drill down on.  Defaults to the segment
-                       with the highest total absolute relevance.
+        highlight_seg: Unused (kept for call-site compatibility).
         label:         Optional annotation string appended to plot titles.
+        top_k:         Number of concepts / panels to draw (default 5).
     """
     T = len(x)
     N, K = R_A.shape
     t = np.arange(T)
-
-    # ── per-timestep dominant concept ─────────────────────────────────────────
-    # For each timestep accumulate |R_A[n, k]| from every segment covering it.
-    C_t = np.zeros((T, K), dtype=np.float32)
-    for n in range(N):
-        s = int(starts[n])
-        C_t[s : s + L] += np.abs(R_A[n])
-
-    covered = C_t.sum(axis=1) > 0  # timesteps touched by at least one segment
-    dominant = C_t.argmax(axis=1)  # (T,) index of dominant concept
-
-    # ── choose segment to highlight ───────────────────────────────────────────
-    if highlight_seg is None:
-        highlight_seg = int(np.abs(R_A).sum(axis=1).argmax())
+    n_panels = min(top_k, K)
+    tag = label if label is not None else f"h*={h_star}"
 
     colors = [_concept_color(n, i) for i, n in enumerate(concept_names)]
 
-    # ── figure layout ─────────────────────────────────────────────────────────
-    tag = label if label is not None else f"h*={h_star}"
-    fig, (ax_top, ax_bot) = plt.subplots(
-        2, 1, figsize=(13, 7), gridspec_kw={"height_ratios": [3, 2], "hspace": 0.35}
-    )
-    fig.suptitle(f"{run_id} · segment concept map  ({tag})", fontsize=11, y=1.01)
+    # Top concepts by mean absolute relevance across segments.
+    concept_mean_abs = np.abs(R_A).mean(axis=0)
+    top_concept_idx = np.argsort(concept_mean_abs)[::-1][:n_panels]
 
-    # ── Panel 1: time series + coloured background ────────────────────────────
-    # Draw one axvspan per run of the same dominant concept.
-    if covered.any():
-        prev_t = 0
-        prev_c = dominant[0]
-        for ti in range(1, T + 1):
-            cur_c = dominant[ti] if ti < T and covered[ti] else -1
-            if ti == T or cur_c != prev_c or not covered[ti]:
-                if covered[prev_t]:
-                    ax_top.axvspan(
-                        prev_t, ti - 1, alpha=0.22, color=colors[prev_c], linewidth=0
-                    )
-                prev_t = ti
-                prev_c = cur_c if ti < T else -1
-
-    ax_top.plot(t, x, color="black", lw=1.1, zorder=3, label="input  x")
-
-    # Highlight the chosen segment with a bold box.
-    hs = int(starts[highlight_seg])
-    y_lo, y_hi = ax_top.get_ylim()
-    # Use data range for the box height (recomputed after plotting).
     y_lo = x.min() - 0.05 * (x.max() - x.min())
     y_hi = x.max() + 0.05 * (x.max() - x.min())
-    dom_k = int(np.abs(R_A[highlight_seg]).argmax())
-    rect = mpatches.FancyBboxPatch(
-        (hs, y_lo),
-        L,
-        y_hi - y_lo,
-        boxstyle="square,pad=0",
-        linewidth=2,
-        edgecolor=colors[dom_k],
-        facecolor=colors[dom_k],
-        alpha=0.35,
-        zorder=4,
-    )
-    ax_top.add_patch(rect)
-    ax_top.annotate(
-        f"seg {highlight_seg}",
-        xy=(hs + L / 2, y_hi),
-        xytext=(0, 6),
-        textcoords="offset points",
-        ha="center",
-        fontsize=7,
-        color=colors[dom_k],
-        zorder=5,
-    )
-    ax_top.set_xlim(0, T - 1)
-    ax_top.set_ylim(y_lo, y_hi)
-    ax_top.set_ylabel("Normalised value", fontsize=9)
-    ax_top.set_xlabel("Timestep  t", fontsize=9)
 
-    # Legend: one patch per concept that actually appears as dominant.
-    dominant_set = sorted(set(dominant[covered]))
-    legend_patches = [
-        mpatches.Patch(color=colors[k], label=concept_names[k], alpha=0.7)
-        for k in dominant_set
-    ]
-    ax_top.legend(
-        handles=legend_patches,
-        fontsize=6.5,
-        ncol=max(1, len(dominant_set) // 4),
-        loc="upper left",
-        bbox_to_anchor=(1.01, 1.0),
-        framealpha=0.6,
-        title="Dominant\nconcept",
-        title_fontsize=6.5,
+    fig, axes = plt.subplots(
+        n_panels,
+        1,
+        figsize=(13, 2.6 * n_panels),
+        sharex=True,
+        gridspec_kw={"hspace": 0.45},
+    )
+    if n_panels == 1:
+        axes = [axes]
+
+    fig.suptitle(
+        f"{run_id} · segment concept map  ({tag}, top {n_panels})",
+        fontsize=11,
+        y=1.01,
     )
 
-    # ── Panel 2: concept breakdown for highlighted segment ────────────────────
-    seg_R = R_A[highlight_seg]  # (K,)
-    bar_colors = [colors[k] for k in range(K)]
-    y_pos = np.arange(K)
+    for panel, k in enumerate(top_concept_idx):
+        ax = axes[panel]
+        col = colors[k]
 
-    bars = ax_bot.barh(y_pos, seg_R, color=bar_colors, edgecolor="white", linewidth=0.4)
+        # Best segment for this concept.
+        best_seg = int(np.abs(R_A[:, k]).argmax())
+        best_val = R_A[best_seg, k]
+        hs = int(starts[best_seg])
 
-    # Outline the dominant-concept bar.
-    bars[dom_k].set_edgecolor("black")
-    bars[dom_k].set_linewidth(1.8)
+        ax.plot(t, x, color="#444444", lw=1.0, zorder=3)
 
-    # Value annotations.
-    for bar, val in zip(bars, seg_R, strict=False):
-        ha = "left" if val >= 0 else "right"
-        offset = 0.002 * (np.abs(seg_R).max() + 1e-9)
-        x_ann = val + (offset if val >= 0 else -offset)
-        ax_bot.text(
-            x_ann,
-            bar.get_y() + bar.get_height() / 2,
-            f"{val:.3f}",
-            va="center",
-            ha=ha,
-            fontsize=6.5,
+        # Highlight box.
+        rect = mpatches.FancyBboxPatch(
+            (hs, y_lo),
+            L,
+            y_hi - y_lo,
+            boxstyle="square,pad=0",
+            linewidth=1.8,
+            edgecolor=col,
+            facecolor=col,
+            alpha=0.30,
+            zorder=4,
+        )
+        ax.add_patch(rect)
+        ax.annotate(
+            f"seg {best_seg}  R_A={best_val:+.3f}",
+            xy=(hs + L / 2, y_hi),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            fontsize=7,
+            color=col,
+            fontweight="bold",
+            zorder=5,
         )
 
-    ax_bot.axvline(0, color="black", lw=0.8)
-    ax_bot.set_yticks(y_pos)
-    ax_bot.set_yticklabels(concept_names, fontsize=7)
-    ax_bot.set_xlabel("R_A  (concept relevance)", fontsize=9)
-    ax_bot.set_title(
-        f"Segment {highlight_seg}  (t={hs}–{hs + L - 1})  ·  "
-        f"dominant: {concept_names[dom_k]}",
-        fontsize=9,
-    )
+        ax.set_xlim(0, T - 1)
+        ax.set_ylim(y_lo, y_hi)
+        ax.set_ylabel("x(t)", fontsize=8)
+        ax.set_title(
+            f"[{panel + 1}] {concept_names[k]}  "
+            f"(mean |R_A|={concept_mean_abs[k]:.3f})",
+            fontsize=8.5,
+            loc="left",
+            color=col,
+            fontweight="bold",
+        )
+        ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.2f"))
+        ax.tick_params(labelsize=7)
+
+    axes[-1].set_xlabel("Timestep  t", fontsize=9)
 
     _save(fig, out_dir / "plot5_segment_concept_map.png")
 
@@ -683,6 +635,122 @@ def plot_concept_lines(
     _save(fig, out_dir / "plot7_concept_lines.png")
 
 
+# ── Plot 8: top concepts at different segments ────────────────────────────────
+
+
+def plot_top_segment_concepts(
+    x: np.ndarray,
+    R_A: np.ndarray,
+    starts: np.ndarray,
+    L: int,
+    concept_names: list[str],
+    run_id: str,
+    h_star: int,
+    out_dir: Path,
+    top_k: int = 5,
+    label: str | None = None,
+) -> None:
+    """5×1 subfigure: for each top segment, x(t) with the segment window highlighted.
+
+    Selects the top_k most relevant segments by total |R_A| and shows the full
+    time series in each panel with the segment window overlaid as a coloured box
+    whose colour reflects that segment's dominant concept.
+
+    Args:
+        x:             Raw input signal (T,).
+        R_A:           Segment × concept relevance (N, K).
+        starts:        Integer start index of each segment (N,).
+        L:             Segment length in timesteps.
+        concept_names: Ordered concept name strings.
+        run_id:        String used in titles.
+        h_star:        Horizon step / class index.
+        out_dir:       Output directory.
+        top_k:         Number of top segments / panels (default 5).
+        label:         Optional annotation string appended to plot titles.
+    """
+    T = len(x)
+    N, K = R_A.shape
+    t = np.arange(T)
+    n_panels = min(top_k, N)
+    tag = label if label is not None else f"h*={h_star}"
+
+    seg_total_abs = np.abs(R_A).sum(axis=1)
+    top_seg_idx = np.argsort(seg_total_abs)[::-1][:n_panels]
+
+    colors = [_concept_color(n, i) for i, n in enumerate(concept_names)]
+
+    y_lo = x.min() - 0.05 * (x.max() - x.min())
+    y_hi = x.max() + 0.05 * (x.max() - x.min())
+
+    fig, axes = plt.subplots(
+        n_panels,
+        1,
+        figsize=(13, 2.6 * n_panels),
+        sharex=True,
+        gridspec_kw={"hspace": 0.45},
+    )
+    if n_panels == 1:
+        axes = [axes]
+
+    fig.suptitle(
+        f"{run_id} · segment concept maps  ({tag}, top {n_panels} segments)",
+        fontsize=11,
+        y=1.01,
+    )
+
+    for panel, seg in enumerate(top_seg_idx):
+        ax = axes[panel]
+        dom_k = int(np.abs(R_A[seg]).argmax())
+        dom_val = R_A[seg, dom_k]
+        col = colors[dom_k]
+        hs = int(starts[seg])
+
+        ax.plot(t, x, color="#444444", lw=1.0, zorder=3)
+
+        rect = mpatches.FancyBboxPatch(
+            (hs, y_lo),
+            L,
+            y_hi - y_lo,
+            boxstyle="square,pad=0",
+            linewidth=1.8,
+            edgecolor=col,
+            facecolor=col,
+            alpha=0.30,
+            zorder=4,
+        )
+        ax.add_patch(rect)
+        ax.annotate(
+            f"seg {seg}  t={hs}–{hs + L - 1}  R_A={dom_val:+.3f}",
+            xy=(hs + L / 2, y_hi),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            fontsize=7,
+            color=col,
+            fontweight="bold",
+            zorder=5,
+        )
+
+        ax.set_xlim(0, T - 1)
+        ax.set_ylim(y_lo, y_hi)
+        ax.set_ylabel("x(t)", fontsize=8)
+        ax.set_title(
+            f"[{panel + 1}] Segment {seg}  "
+            f"(total |R_A|={seg_total_abs[seg]:.3f})  ·  "
+            f"dominant: {concept_names[dom_k]}",
+            fontsize=8.5,
+            loc="left",
+            color=col,
+            fontweight="bold",
+        )
+        ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.2f"))
+        ax.tick_params(labelsize=7)
+
+    axes[-1].set_xlabel("Timestep  t", fontsize=9)
+
+    _save(fig, out_dir / "plot8_top_segment_concepts.png")
+
+
 # ── High-level entry point ─────────────────────────────────────────────────────
 
 
@@ -758,5 +826,8 @@ def plot_explanation(
         C, R_A, concept_names, run_id, h_star, out_dir, label=label
     )
     plot_concept_lines(C, concept_names, run_id, h_star, out_dir, label=label)
+    plot_top_segment_concepts(
+        x_np, R_A, starts, L, concept_names, run_id, h_star, out_dir, label=label
+    )
 
     return out_dir
